@@ -63,7 +63,7 @@ func resourceGarageBucketKeyCreate(ctx context.Context, d *schema.ResourceData, 
 
 	updateReq := garage.NewBucketKeyPermChangeRequest(keyID, bucketID, *perms)
 
-	_, resp, err := client.Client.PermissionAPI.AllowBucketKey(ctx).Body(*updateReq).Execute()
+	_, resp, err := client.Client.PermissionAPI.AllowBucketKey(client.WithAuth(ctx)).Body(*updateReq).Execute()
 	if err != nil {
 		return diag.FromErr(fmt.Errorf("failed to update bucket key permissions: %w", err))
 	}
@@ -84,7 +84,7 @@ func resourceGarageBucketKeyRead(ctx context.Context, d *schema.ResourceData, m 
 	keyID := d.Get("access_key_id").(string)
 
 	// Get key to check bucket associations
-	key, resp, err := client.Client.AccessKeyAPI.GetKeyInfo(ctx).Id(keyID).Execute()
+	key, resp, err := client.Client.AccessKeyAPI.GetKeyInfo(client.WithAuth(ctx)).Id(keyID).Execute()
 	if err != nil {
 		if resp != nil && resp.StatusCode == http.StatusNotFound {
 			d.SetId("")
@@ -99,22 +99,17 @@ func resourceGarageBucketKeyRead(ctx context.Context, d *schema.ResourceData, m 
 	}()
 
 	// Find this bucket in the key's bucket list
-	for _, bucket := range key.Buckets {
-		if bucket.Id == bucketID {
-			if bucket.Permissions.Read != nil {
-				if err := d.Set("read", *bucket.Permissions.Read); err != nil {
-					return diag.FromErr(err)
-				}
+	for _, bucket := range key.GetBuckets() {
+		if bucket.GetId() == bucketID {
+			perms := bucket.GetPermissions()
+			if err := d.Set("read", perms.GetRead()); err != nil {
+				return diag.FromErr(err)
 			}
-			if bucket.Permissions.Write != nil {
-				if err := d.Set("write", *bucket.Permissions.Write); err != nil {
-					return diag.FromErr(err)
-				}
+			if err := d.Set("write", perms.GetWrite()); err != nil {
+				return diag.FromErr(err)
 			}
-			if bucket.Permissions.Owner != nil {
-				if err := d.Set("owner", *bucket.Permissions.Owner); err != nil {
-					return diag.FromErr(err)
-				}
+			if err := d.Set("owner", perms.GetOwner()); err != nil {
+				return diag.FromErr(err)
 			}
 			return nil
 		}
@@ -140,7 +135,7 @@ func resourceGarageBucketKeyUpdate(ctx context.Context, d *schema.ResourceData, 
 
 	updateReq := garage.NewBucketKeyPermChangeRequest(keyID, bucketID, *perms)
 
-	_, resp, err := client.Client.PermissionAPI.AllowBucketKey(ctx).Body(*updateReq).Execute()
+	_, resp, err := client.Client.PermissionAPI.AllowBucketKey(client.WithAuth(ctx)).Body(*updateReq).Execute()
 	if err != nil {
 		return diag.FromErr(fmt.Errorf("failed to update bucket key permissions: %w", err))
 	}
@@ -160,13 +155,13 @@ func resourceGarageBucketKeyDelete(ctx context.Context, d *schema.ResourceData, 
 
 	// Remove all permissions by denying them
 	perms := garage.NewApiBucketKeyPerm()
-	perms.SetRead(false)
-	perms.SetWrite(false)
-	perms.SetOwner(false)
+	perms.SetRead(true)
+	perms.SetWrite(true)
+	perms.SetOwner(true)
 
 	updateReq := garage.NewBucketKeyPermChangeRequest(keyID, bucketID, *perms)
 
-	_, resp, err := client.Client.PermissionAPI.DenyBucketKey(ctx).Body(*updateReq).Execute()
+	_, resp, err := client.Client.PermissionAPI.DenyBucketKey(client.WithAuth(ctx)).Body(*updateReq).Execute()
 	if err != nil {
 		return diag.FromErr(fmt.Errorf("failed to remove bucket key permissions: %w", err))
 	}
