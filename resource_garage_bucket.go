@@ -54,12 +54,12 @@ func resourceGarageBucketCreate(ctx context.Context, d *schema.ResourceData, m i
 	client := m.(*GarageClient)
 	globalAlias := d.Get("global_alias").(string)
 
-	bucketInfo := garage.NewCreateBucketRequest()
+	bucketReq := garage.NewCreateBucketRequest()
 	if globalAlias != "" {
-		bucketInfo.SetGlobalAlias(globalAlias)
+		bucketReq.SetGlobalAlias(globalAlias)
 	}
 
-	bucket, resp, err := client.Client.BucketAPI.CreateBucket(ctx).CreateBucketRequest(*bucketInfo).Execute()
+	bucket, resp, err := client.Client.BucketAPI.CreateBucket(client.WithAuth(ctx)).CreateBucketRequest(*bucketReq).Execute()
 	if err != nil {
 		return diag.FromErr(fmt.Errorf("failed to create bucket: %w", err))
 	}
@@ -69,25 +69,25 @@ func resourceGarageBucketCreate(ctx context.Context, d *schema.ResourceData, m i
 		}
 	}()
 
-	d.SetId(bucket.Id)
-	if err := d.Set("id", bucket.Id); err != nil {
+	d.SetId(bucket.GetId())
+	if err := d.Set("id", bucket.GetId()); err != nil {
 		return diag.FromErr(err)
 	}
-	if err := d.Set("bytes", bucket.Bytes); err != nil {
+	if err := d.Set("bytes", bucket.GetBytes()); err != nil {
 		return diag.FromErr(err)
 	}
-	if err := d.Set("objects", bucket.Objects); err != nil {
+	if err := d.Set("objects", bucket.GetObjects()); err != nil {
 		return diag.FromErr(err)
 	}
-	if len(bucket.GlobalAliases) > 0 {
-		if err := d.Set("global_alias", bucket.GlobalAliases[0]); err != nil {
+	if aliases := bucket.GetGlobalAliases(); len(aliases) > 0 {
+		if err := d.Set("global_alias", aliases[0]); err != nil {
 			return diag.FromErr(err)
 		}
 	}
 
 	// Set expiration policy if specified
 	if expirationDays, ok := d.GetOk("expiration_days"); ok && expirationDays.(int) > 0 {
-		if err := setBucketLifecyclePolicy(ctx, client, bucket.Id, expirationDays.(int)); err != nil {
+		if err := setBucketLifecyclePolicy(ctx, client, bucket.GetId(), expirationDays.(int)); err != nil {
 			return diag.FromErr(fmt.Errorf("failed to set expiration policy: %w", err))
 		}
 		if err := d.Set("expiration_days", expirationDays.(int)); err != nil {
@@ -102,7 +102,7 @@ func resourceGarageBucketRead(ctx context.Context, d *schema.ResourceData, m int
 	client := m.(*GarageClient)
 	bucketID := d.Id()
 
-	bucket, resp, err := client.Client.BucketAPI.GetBucketInfo(ctx).Id(bucketID).Execute()
+	bucket, resp, err := client.Client.BucketAPI.GetBucketInfo(client.WithAuth(ctx)).Id(bucketID).Execute()
 	if err != nil {
 		if resp != nil && resp.StatusCode == http.StatusNotFound {
 			d.SetId("")
@@ -116,23 +116,23 @@ func resourceGarageBucketRead(ctx context.Context, d *schema.ResourceData, m int
 		}
 	}()
 
-	if err := d.Set("id", bucket.Id); err != nil {
+	if err := d.Set("id", bucket.GetId()); err != nil {
 		return diag.FromErr(err)
 	}
-	if err := d.Set("bytes", bucket.Bytes); err != nil {
+	if err := d.Set("bytes", bucket.GetBytes()); err != nil {
 		return diag.FromErr(err)
 	}
-	if err := d.Set("objects", bucket.Objects); err != nil {
+	if err := d.Set("objects", bucket.GetObjects()); err != nil {
 		return diag.FromErr(err)
 	}
-	if len(bucket.GlobalAliases) > 0 {
-		if err := d.Set("global_alias", bucket.GlobalAliases[0]); err != nil {
+	if aliases := bucket.GetGlobalAliases(); len(aliases) > 0 {
+		if err := d.Set("global_alias", aliases[0]); err != nil {
 			return diag.FromErr(err)
 		}
 	}
 
 	// Read expiration policy if it exists
-	expirationDays, err := getBucketLifecyclePolicy(ctx, client, bucket.Id)
+	expirationDays, err := getBucketLifecyclePolicy(ctx, client, bucket.GetId())
 	if err == nil && expirationDays > 0 {
 		if err := d.Set("expiration_days", expirationDays); err != nil {
 			return diag.FromErr(err)
@@ -170,8 +170,19 @@ func resourceGarageBucketUpdate(ctx context.Context, d *schema.ResourceData, m i
 }
 
 func resourceGarageBucketDelete(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
-	// Note: Garage API v1 doesn't have a delete bucket endpoint
-	// We'll just remove from state
+	client := m.(*GarageClient)
+	bucketID := d.Id()
+
+	resp, err := client.Client.BucketAPI.DeleteBucket(client.WithAuth(ctx)).Id(bucketID).Execute()
+	if err != nil {
+		return diag.FromErr(fmt.Errorf("failed to delete bucket: %w", err))
+	}
+	defer func() {
+		if resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	}()
+
 	d.SetId("")
 	return nil
 }
@@ -200,7 +211,7 @@ type Expiration struct {
 // setBucketLifecyclePolicy sets the lifecycle expiration policy for a bucket using S3-compatible API
 func setBucketLifecyclePolicy(ctx context.Context, client *GarageClient, bucketID string, expirationDays int) error {
 	// Get bucket info to find the bucket alias/name
-	bucket, resp, err := client.Client.BucketAPI.GetBucketInfo(ctx).Id(bucketID).Execute()
+	bucket, resp, err := client.Client.BucketAPI.GetBucketInfo(client.WithAuth(ctx)).Id(bucketID).Execute()
 	if err != nil {
 		return fmt.Errorf("failed to get bucket info: %w", err)
 	}
@@ -212,15 +223,15 @@ func setBucketLifecyclePolicy(ctx context.Context, client *GarageClient, bucketI
 
 	// Get bucket name (alias)
 	bucketName := bucketID
-	if len(bucket.GlobalAliases) > 0 {
-		bucketName = bucket.GlobalAliases[0]
+	if aliases := bucket.GetGlobalAliases(); len(aliases) > 0 {
+		bucketName = aliases[0]
 	}
 
 	// Construct S3 endpoint URL (Garage S3 API typically uses port 3900)
 	// Replace admin port (3903) with S3 port (3900)
 	s3URL := fmt.Sprintf("%s://%s/%s?lifecycle",
-		client.Client.GetConfig().Scheme,
-		replacePort(client.Client.GetConfig().Host, 3900),
+		client.Scheme,
+		replacePort(client.Host, 3900),
 		bucketName)
 
 	// Create lifecycle configuration XML
@@ -248,10 +259,7 @@ func setBucketLifecyclePolicy(ctx context.Context, client *GarageClient, bucketI
 	}
 
 	req.Header.Set("Content-Type", "application/xml")
-	// Use admin token for authorization (Garage may accept this for S3 API too)
-	if authHeader, ok := client.Client.GetConfig().DefaultHeader["Authorization"]; ok {
-		req.Header.Set("Authorization", authHeader)
-	}
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", client.Token))
 
 	// Execute request
 	httpClient := &http.Client{}
@@ -275,7 +283,7 @@ func setBucketLifecyclePolicy(ctx context.Context, client *GarageClient, bucketI
 // getBucketLifecyclePolicy retrieves the lifecycle expiration policy for a bucket
 func getBucketLifecyclePolicy(ctx context.Context, client *GarageClient, bucketID string) (int, error) {
 	// Get bucket info to find the bucket alias/name
-	bucket, resp, err := client.Client.BucketAPI.GetBucketInfo(ctx).Id(bucketID).Execute()
+	bucket, resp, err := client.Client.BucketAPI.GetBucketInfo(client.WithAuth(ctx)).Id(bucketID).Execute()
 	if err != nil {
 		return 0, fmt.Errorf("failed to get bucket info: %w", err)
 	}
@@ -287,14 +295,14 @@ func getBucketLifecyclePolicy(ctx context.Context, client *GarageClient, bucketI
 
 	// Get bucket name (alias)
 	bucketName := bucketID
-	if len(bucket.GlobalAliases) > 0 {
-		bucketName = bucket.GlobalAliases[0]
+	if aliases := bucket.GetGlobalAliases(); len(aliases) > 0 {
+		bucketName = aliases[0]
 	}
 
 	// Construct S3 endpoint URL
 	s3URL := fmt.Sprintf("%s://%s/%s?lifecycle",
-		client.Client.GetConfig().Scheme,
-		replacePort(client.Client.GetConfig().Host, 3900),
+		client.Scheme,
+		replacePort(client.Host, 3900),
 		bucketName)
 
 	// Create HTTP request
@@ -304,9 +312,7 @@ func getBucketLifecyclePolicy(ctx context.Context, client *GarageClient, bucketI
 	}
 
 	// Use admin token for authorization
-	if authHeader, ok := client.Client.GetConfig().DefaultHeader["Authorization"]; ok {
-		req.Header.Set("Authorization", authHeader)
-	}
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", client.Token))
 
 	// Execute request
 	httpClient := &http.Client{}
@@ -345,7 +351,7 @@ func getBucketLifecyclePolicy(ctx context.Context, client *GarageClient, bucketI
 // deleteBucketLifecyclePolicy removes the lifecycle policy from a bucket
 func deleteBucketLifecyclePolicy(ctx context.Context, client *GarageClient, bucketID string) error {
 	// Get bucket info to find the bucket alias/name
-	bucket, resp, err := client.Client.BucketAPI.GetBucketInfo(ctx).Id(bucketID).Execute()
+	bucket, resp, err := client.Client.BucketAPI.GetBucketInfo(client.WithAuth(ctx)).Id(bucketID).Execute()
 	if err != nil {
 		return fmt.Errorf("failed to get bucket info: %w", err)
 	}
@@ -357,14 +363,14 @@ func deleteBucketLifecyclePolicy(ctx context.Context, client *GarageClient, buck
 
 	// Get bucket name (alias)
 	bucketName := bucketID
-	if len(bucket.GlobalAliases) > 0 {
-		bucketName = bucket.GlobalAliases[0]
+	if aliases := bucket.GetGlobalAliases(); len(aliases) > 0 {
+		bucketName = aliases[0]
 	}
 
 	// Construct S3 endpoint URL
 	s3URL := fmt.Sprintf("%s://%s/%s?lifecycle",
-		client.Client.GetConfig().Scheme,
-		replacePort(client.Client.GetConfig().Host, 3900),
+		client.Scheme,
+		replacePort(client.Host, 3900),
 		bucketName)
 
 	// Create HTTP request
@@ -374,9 +380,7 @@ func deleteBucketLifecyclePolicy(ctx context.Context, client *GarageClient, buck
 	}
 
 	// Use admin token for authorization
-	if authHeader, ok := client.Client.GetConfig().DefaultHeader["Authorization"]; ok {
-		req.Header.Set("Authorization", authHeader)
-	}
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", client.Token))
 
 	// Execute request
 	httpClient := &http.Client{}
