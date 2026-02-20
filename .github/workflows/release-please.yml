@@ -32,14 +32,14 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
           token: ${{ secrets.RELEASE_TOKEN }}
 
       - name: Release Please
         id: release
-        uses: googleapis/release-please-action@a02a34c4c6edf88e7b59585c95a4ec3f689e2f76 # v4.2.0
+        uses: googleapis/release-please-action@v4
         with:
           release-type: go
           token: ${{ secrets.RELEASE_TOKEN }}
