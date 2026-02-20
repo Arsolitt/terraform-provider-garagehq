@@ -1,6 +1,6 @@
 # Publishing to Terraform Registry
 
-This guide explains how to publish the `terraform-provider-garage` to the Terraform Registry.
+This guide explains how to publish the `terraform-provider-garagehq` to the Terraform Registry.
 
 ## Prerequisites
 
@@ -67,7 +67,7 @@ Once a release is created on GitHub:
 1. Go to https://registry.terraform.io/publish
 2. Sign in with your GitHub account
 3. Click "Publish Provider"
-4. Select `d0ugal/terraform-provider-garage`
+4. Select `arsolitt/terraform-provider-garagehq`
 5. Follow the prompts to publish
 
 The registry will automatically detect new releases and make them available.
@@ -78,7 +78,7 @@ After publishing, verify the provider is available:
 
 ```bash
 terraform init
-# Should download from registry.terraform.io/d0ugal/garage
+# Should download from registry.terraform.io/arsolitt/garagehq
 ```
 
 ## Troubleshooting
@@ -86,8 +86,8 @@ terraform init
 - **Release workflow fails**: Check that `GPG_PRIVATE_KEY` and `GPG_PASSPHRASE` secrets are set correctly
 - **Registry doesn't detect release**: Ensure the release includes:
   - Binaries for multiple platforms
-  - `terraform-provider-garage_X.X.X_SHA256SUMS` file
-  - `terraform-provider-garage_X.X.X_SHA256SUMS.sig` file
+  - `terraform-provider-garagehq_X.X.X_SHA256SUMS` file
+  - `terraform-provider-garagehq_X.X.X_SHA256SUMS.sig` file
   - `terraform-registry-manifest.json` file
 - **Provider not found**: Wait a few minutes after publishing - the registry needs time to index
 

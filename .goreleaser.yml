@@ -1,6 +1,6 @@
 version: 2
 
-project_name: terraform-provider-garage
+project_name: terraform-provider-garagehq
 
 before:
   hooks:
@@ -80,7 +80,7 @@ release:
     terraform {
       required_providers {
         garage = {
-          source  = "d0ugal/garage"
+          source  = "arsolitt/garagehq"
           version = "{{ .Version }}"
         }
       }
