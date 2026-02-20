@@ -1,6 +1,6 @@
 module github.com/arsolitt/terraform-provider-garagehq
 
-go 1.24.0
+go 1.25.6
 
 require (
 	git.deuxfleurs.fr/garage-sdk/garage-admin-sdk-golang v0.0.0-20260106092213-694c0d66012a

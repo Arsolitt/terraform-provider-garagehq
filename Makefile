@@ -4,7 +4,7 @@
 GOLANGCI_LINT_VERSION := v2.10.1
 
 # Provider version - use git tag or fallback to "dev"
-VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
+VERSION := $(shell git describe --tags --always --dirty 2>/dev/null | sed 's/^v//' || echo "dev")
 
 # Provider registry path
 PROVIDER_REGISTRY := ~/.terraform.d/plugins/registry.terraform.io/arsolitt/garagehq/$(VERSION)/$(shell go env GOOS)_$(shell go env GOARCH)
@@ -24,12 +24,12 @@ help:
 	@echo "Version: $(VERSION)"
 
 build:
-	go build -o terraform-provider-garage
+	go build -o terraform-provider-garagehq
 
 install: build
 	@echo "Installing provider version $(VERSION)..."
 	mkdir -p $(PROVIDER_REGISTRY)
-	cp terraform-provider-garage $(PROVIDER_REGISTRY)/
+	cp terraform-provider-garagehq $(PROVIDER_REGISTRY)/
 	@echo "Installed to $(PROVIDER_REGISTRY)"
 
 test:
@@ -78,4 +78,4 @@ release-dry-run:
 
 clean:
 	go clean
-	rm -f terraform-provider-garage coverage.txt
+	rm -f terraform-provider-garagehq coverage.txt

@@ -1,5 +1,5 @@
 # Binaries
-terraform-provider-garage
+terraform-provider-garagehq
 *.exe
 *.exe~
 *.dll
