@@ -1,8 +1,22 @@
+# Release Please automation for terraform-provider-garage
+#
+# This workflow:
+#   1. Creates release PRs based on conventional commits
+#   2. Updates CHANGELOG.md automatically
+#   3. Creates GitHub releases when PRs are merged
+#
+# Commit message format:
+#   feat: add new feature        -> minor version bump
+#   fix: fix a bug               -> patch version bump
+#   feat!: breaking change       -> major version bump
+#   fix(deps): update dependency -> patch version bump
+
 name: Release Please
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -12,18 +26,23 @@ permissions:
 jobs:
   release-please:
     runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
 
     steps:
-    - uses: actions/checkout@v5
-      with:
-        fetch-depth: 0
-        token: ${{ secrets.RELEASE_TOKEN }}
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.RELEASE_TOKEN }}
 
-    - uses: googleapis/release-please-action@v4
-      id: release_please
-      with:
-        release-type: go
-        path: .
-        token: ${{ secrets.RELEASE_TOKEN }}
-        default-branch: main
-        fork: false
+      - name: Release Please
+        id: release
+        uses: googleapis/release-please-action@a02a34c4c6edf88e7b59585c95a4ec3f689e2f76 # v4.2.0
+        with:
+          release-type: go
+          token: ${{ secrets.RELEASE_TOKEN }}
+
+  # The release workflow is triggered separately by the tag push
+  # No need to call it here as GoReleaser handles the actual release
