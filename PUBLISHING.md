@@ -4,7 +4,7 @@ This guide explains how to publish the `terraform-provider-garagehq` to the Terr
 
 ## Prerequisites
 
-1. **GPG Key Pair**: You need a GPG key to sign releases
+1. **GPG Key Pair**: Required to sign release checksums
 2. **GitHub Secrets**: Store GPG key and passphrase as secrets
 3. **Terraform Registry Account**: Sign in with your GitHub account
 
@@ -22,13 +22,6 @@ Export your private key:
 
 ```bash
 gpg --armor --export-secret-keys YOUR_KEY_ID > gpg-private-key.asc
-```
-
-Get your key fingerprint:
-
-```bash
-gpg --list-secret-keys --keyid-format LONG
-# Look for the line starting with "sec" and note the key ID after the "/"
 ```
 
 ## Step 2: Add GitHub Secrets
