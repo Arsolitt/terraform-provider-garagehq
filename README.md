@@ -111,10 +111,6 @@ resource "garage_bucket_key" "loki_admin" {
 Different retention for different backup types:
 
 ```hcl
-locals {
-  gb = 1073741824
-}
-
 resource "garage_key" "backup" {
   name = "backup-service"
 }
@@ -193,7 +189,7 @@ resource "garage_cluster_layout" "dev" {
   roles {
     id       = var.node_id
     zone     = "local"
-    capacity = 10737418240  # 10GB
+    capacity = "10G"
     tags     = ["dev", "standalone"]
   }
 }
@@ -202,30 +198,25 @@ resource "garage_cluster_layout" "dev" {
 ### Multi-Node Production Cluster
 
 ```hcl
-locals {
-  gb = 1073741824
-  tb = 1099511627776
-}
-
 resource "garage_cluster_layout" "production" {
   roles {
     id       = "node-dc1-a"
     zone     = "datacenter-1"
-    capacity = 2 * local.tb
+    capacity = "2T"
     tags     = ["storage", "ssd", "primary"]
   }
 
   roles {
     id       = "node-dc1-b"
     zone     = "datacenter-1"
-    capacity = 2 * local.tb
+    capacity = "2T"
     tags     = ["storage", "ssd", "primary"]
   }
 
   roles {
     id       = "node-dc2-a"
     zone     = "datacenter-2"
-    capacity = 2 * local.tb
+    capacity = "2T"
     tags     = ["storage", "ssd", "secondary"]
   }
 

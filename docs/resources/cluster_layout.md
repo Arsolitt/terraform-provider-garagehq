@@ -19,7 +19,7 @@ resource "garage_cluster_layout" "dev" {
   roles {
     id       = "node-dev-1"
     zone     = "local"
-    capacity = 1073741824  # 1GB
+    capacity = "1G"
     tags     = ["dev", "storage"]
   }
 }
@@ -32,21 +32,21 @@ resource "garage_cluster_layout" "production" {
   roles {
     id       = "node-1"
     zone     = "dc1"
-    capacity = 107374182400  # 100GB
+    capacity = "100G"
     tags     = ["storage", "ssd"]
   }
 
   roles {
     id       = "node-2"
     zone     = "dc1"
-    capacity = 107374182400  # 100GB
+    capacity = "100G"
     tags     = ["storage", "ssd"]
   }
 
   roles {
     id       = "node-3"
     zone     = "dc2"
-    capacity = 107374182400  # 100GB
+    capacity = "100G"
     tags     = ["storage", "hdd"]
   }
 }
@@ -60,14 +60,14 @@ resource "garage_cluster_layout" "with_gateways" {
   roles {
     id       = "storage-1"
     zone     = "zone-a"
-    capacity = 53687091200  # 50GB
+    capacity = "50G"
     tags     = ["storage"]
   }
 
   roles {
     id       = "storage-2"
     zone     = "zone-b"
-    capacity = 53687091200  # 50GB
+    capacity = "50G"
     tags     = ["storage"]
   }
 
@@ -95,28 +95,28 @@ resource "garage_cluster_layout" "multi_zone" {
   roles {
     id       = "eu-west-1a"
     zone     = "eu-west-1"
-    capacity = 21474836480  # 20GB
+    capacity = "20G"
     tags     = ["primary", "fast"]
   }
 
   roles {
     id       = "eu-west-1b"
     zone     = "eu-west-1"
-    capacity = 21474836480
+    capacity = "20G"
     tags     = ["primary", "fast"]
   }
 
   roles {
     id       = "us-east-1a"
     zone     = "us-east-1"
-    capacity = 21474836480
+    capacity = "20G"
     tags     = ["secondary", "standard"]
   }
 
   roles {
     id       = "us-east-1b"
     zone     = "us-east-1"
-    capacity = 21474836480
+    capacity = "20G"
     tags     = ["secondary", "standard"]
   }
 }
@@ -140,35 +140,32 @@ terraform import garage_cluster_layout.main cluster-layout
 
 - `id` (String, Required) - Node ID (must match the node's configured ID)
 - `zone` (String, Required) - Zone assigned to the node for data replication
-- `capacity` (Number, Optional) - Storage capacity in bytes. Omit for gateway nodes.
+- `capacity` (String, Optional) - Storage capacity with unit suffix (e.g., `1G`, `500M`, `2TiB`). Omit for gateway nodes.
 - `tags` (List of String, Optional) - Tags assigned to the node
 
 ### Read-Only
 
 - `version` (Number) - Current layout version
 
-## Capacity Calculation
+## Capacity Format
 
-Capacity is specified in bytes. Common values:
+Capacity can be specified with binary unit suffixes:
 
-| Capacity | Bytes |
-|----------|-------|
-| 1 GB | 1073741824 |
-| 10 GB | 10737418240 |
-| 100 GB | 107374182400 |
-| 1 TB | 1099511627776 |
+| Suffix | Meaning | Example |
+|--------|---------|---------|
+| K, KiB | 1024 bytes | `512K` |
+| M, MiB | 1024² bytes | `500M` |
+| G, GiB | 1024³ bytes | `1G` |
+| T, TiB | 1024⁴ bytes | `2T` |
+
+Plain numbers (bytes) are also accepted: `1073741824`
 
 ```hcl
-locals {
-  gb = 1073741824
-  tb = 1099511627776
-}
-
 resource "garage_cluster_layout" "example" {
   roles {
     id       = "node-1"
     zone     = "dc1"
-    capacity = 100 * local.gb  # 100GB
+    capacity = "100G"
   }
 }
 ```

@@ -25,7 +25,7 @@ resource "garage_cluster_layout" "dev" {
   roles {
     id       = var.node_id  # From garage node config
     zone     = "local"
-    capacity = 1073741824   # 1GB in bytes
+    capacity = "1G"
     tags     = ["dev", "local"]
   }
 }
@@ -43,7 +43,7 @@ resource "garage_cluster_layout" "development" {
   roles {
     id       = var.node_id
     zone     = "dev"
-    capacity = 10737418240  # 10GB
+    capacity = "10G"
     tags     = ["development", "standalone"]
   }
 }
@@ -97,21 +97,21 @@ resource "garage_cluster_layout" "production" {
   roles {
     id       = "node-1-id"
     zone     = "zone-a"
-    capacity = 107374182400  # 100GB
+    capacity = "100G"
     tags     = ["storage", "primary"]
   }
 
   roles {
     id       = "node-2-id"
     zone     = "zone-b"
-    capacity = 107374182400  # 100GB
+    capacity = "100G"
     tags     = ["storage", "primary"]
   }
 
   roles {
     id       = "node-3-id"
     zone     = "zone-c"
-    capacity = 107374182400  # 100GB
+    capacity = "100G"
     tags     = ["storage", "primary"]
   }
 }
@@ -127,21 +127,21 @@ resource "garage_cluster_layout" "with_gateways" {
   roles {
     id       = "storage-1"
     zone     = "datacenter-1"
-    capacity = 536870912000  # 500GB
+    capacity = "500G"
     tags     = ["storage", "ssd"]
   }
 
   roles {
     id       = "storage-2"
     zone     = "datacenter-2"
-    capacity = 536870912000
+    capacity = "500G"
     tags     = ["storage", "ssd"]
   }
 
   roles {
     id       = "storage-3"
     zone     = "datacenter-3"
-    capacity = 536870912000
+    capacity = "500G"
     tags     = ["storage", "hdd"]
   }
 
@@ -163,23 +163,30 @@ resource "garage_cluster_layout" "with_gateways" {
 
 ## Capacity Planning
 
-### Calculating Capacity
+### Specifying Capacity
 
-Capacity is specified in bytes. Use locals for readability:
+Capacity can be specified with binary unit suffixes for readability:
 
 ```hcl
-locals {
-  gb = 1073741824
-  tb = 1099511627776
-}
-
 resource "garage_cluster_layout" "production" {
   roles {
     id       = "node-1"
     zone     = "dc1"
-    capacity = 2 * local.tb  # 2TB
+    capacity = "2T"
   }
 }
+```
+
+Supported suffixes:
+
+| Suffix | Meaning | Example |
+|--------|---------|---------|
+| K, KiB | 1024 bytes | `512K` |
+| M, MiB | 1024² bytes | `500M` |
+| G, GiB | 1024³ bytes | `1G` |
+| T, TiB | 1024⁴ bytes | `2T` |
+
+Plain numbers (bytes) are also accepted: `1073741824`
 ```
 
 ### Usable Capacity
@@ -193,19 +200,19 @@ resource "garage_cluster_layout" "example" {
   roles {
     id       = "node-1"
     zone     = "dc1"
-    capacity = local.tb  # 1TB per node
+    capacity = "1T"
   }
 
   roles {
     id       = "node-2"
     zone     = "dc2"
-    capacity = local.tb
+    capacity = "1T"
   }
 
   roles {
     id       = "node-3"
     zone     = "dc3"
-    capacity = local.tb
+    capacity = "1T"
   }
 }
 # Total: 3TB raw = ~1TB usable
@@ -242,14 +249,14 @@ resource "garage_cluster_layout" "production" {
   roles {
     id       = "node-1"
     zone     = "dc1"
-    capacity = local.tb
+    capacity = "1T"
   }
 
   # New node
   roles {
     id       = "node-4"  # New node ID
     zone     = "dc4"     # New zone
-    capacity = local.tb
+    capacity = "1T"
   }
 }
 ```

@@ -13,6 +13,22 @@ import (
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 )
 
+func validateCapacity(v interface{}, k string) (ws []string, errors []error) {
+	val, ok := v.(string)
+	if !ok {
+		errors = append(errors, fmt.Errorf("expected type of %q to be string", k))
+		return
+	}
+	if val == "" {
+		return
+	}
+	_, err := ParseCapacity(val)
+	if err != nil {
+		errors = append(errors, fmt.Errorf("%q: %w", k, err))
+	}
+	return
+}
+
 // nodeRoleChange is a custom type to work around Garage v2.2 oneOf validation issue.
 // The server validates oneOf schemas in order and expects "remove" field in the first schema.
 type nodeRoleChange struct {
@@ -108,9 +124,11 @@ func buildNodeRoles(roles []interface{}) []nodeRoleChange {
 			Zone: r["zone"].(string),
 			Tags: expandStringList(r["tags"].([]interface{})),
 		}
-		if capacity, ok := r["capacity"].(int); ok && capacity > 0 {
-			c := int64(capacity)
-			nodeRole.Capacity = &c
+		if capacity, ok := r["capacity"].(string); ok && capacity != "" {
+			c, err := ParseCapacity(capacity)
+			if err == nil {
+				nodeRole.Capacity = &c
+			}
 		}
 		nodeRoles[i] = nodeRole
 	}
@@ -141,9 +159,10 @@ func resourceGarageClusterLayout() *schema.Resource {
 							Description: "Zone assigned to the node",
 						},
 						"capacity": {
-							Type:        schema.TypeInt,
-							Optional:    true,
-							Description: "Capacity in bytes (omit for gateway nodes)",
+							Type:         schema.TypeString,
+							Optional:     true,
+							Description:  "Storage capacity with unit suffix (e.g., 1G, 500M, 2TiB). Omit for gateway nodes.",
+							ValidateFunc: validateCapacity,
 						},
 						"tags": {
 							Type:        schema.TypeList,
@@ -227,7 +246,18 @@ func resourceGarageClusterLayoutRead(ctx context.Context, d *schema.ResourceData
 					"zone": node.GetZone(),
 				}
 				if capacity, ok := node.GetCapacityOk(); ok {
-					currentRole["capacity"] = int(*capacity)
+					// Try to preserve the user's original input format
+					originalInput, hasOriginal := r["capacity"].(string)
+					if hasOriginal && originalInput != "" {
+						parsedOriginal, err := ParseCapacity(originalInput)
+						if err == nil && parsedOriginal == *capacity {
+							currentRole["capacity"] = originalInput
+						} else {
+							currentRole["capacity"] = FormatCapacity(*capacity)
+						}
+					} else {
+						currentRole["capacity"] = FormatCapacity(*capacity)
+					}
 				}
 				if tags := node.GetTags(); len(tags) > 0 {
 					currentRole["tags"] = tags
