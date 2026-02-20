@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.1.0](https://github.com/Arsolitt/terraform-provider-garagehq/compare/v1.0.0...v1.1.0) (2026-02-20)
+
+
+### Features
+
+* **cluster_layout:** accept capacity as string with unit suffixes ([9c1c870](https://github.com/Arsolitt/terraform-provider-garagehq/commit/9c1c870e73d9e5b0d4be4a3430e2f94064c3ff91))
+
+
+### Bug Fixes
+
+* **cluster_layout:** resolve oneOf validation issue with Garage v2.2 ([c2c542f](https://github.com/Arsolitt/terraform-provider-garagehq/commit/c2c542fe8e89dd9a6ccad702c1cd2a45f24efd25))
+
 ## [1.0.0](https://github.com/Arsolitt/terraform-provider-garagehq/compare/v0.0.16...v1.0.0) (2026-02-20)
 
 
