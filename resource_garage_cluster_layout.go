@@ -1,14 +1,121 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 
 	garage "git.deuxfleurs.fr/garage-sdk/garage-admin-sdk-golang"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 )
+
+// nodeRoleChange is a custom type to work around Garage v2.2 oneOf validation issue.
+// The server validates oneOf schemas in order and expects "remove" field in the first schema.
+type nodeRoleChange struct {
+	Id       string   `json:"id"`
+	Zone     string   `json:"zone,omitempty"`
+	Tags     []string `json:"tags,omitempty"`
+	Capacity *int64   `json:"capacity,omitempty"`
+	Remove   *bool    `json:"remove,omitempty"`
+}
+
+// layoutNodeRole represents a node role in the cluster layout response.
+type layoutNodeRole struct {
+	Id       string   `json:"id"`
+	Zone     string   `json:"zone"`
+	Tags     []string `json:"tags"`
+	Capacity *int64   `json:"capacity,omitempty"`
+}
+
+// stagedRoleChange represents a staged role change in the response.
+type stagedRoleChange struct {
+	Id       string   `json:"id"`
+	Zone     string   `json:"zone,omitempty"`
+	Tags     []string `json:"tags,omitempty"`
+	Capacity *int64   `json:"capacity,omitempty"`
+	Remove   *bool    `json:"remove,omitempty"`
+}
+
+// clusterLayoutResponse is a custom response type for cluster layout.
+type clusterLayoutResponse struct {
+	Version           int64              `json:"version"`
+	Roles             []layoutNodeRole   `json:"roles"`
+	StagedRoleChanges []stagedRoleChange `json:"stagedRoleChanges,omitempty"`
+}
+
+// updateClusterLayoutRequest is a custom request type for cluster layout updates.
+type updateClusterLayoutRequest struct {
+	Roles []nodeRoleChange `json:"roles,omitempty"`
+}
+
+// updateClusterLayoutRaw sends a cluster layout update request using raw JSON.
+// This works around the Garage v2.2 oneOf validation issue where the server
+// expects the "remove" field even for add/update operations.
+func updateClusterLayoutRaw(ctx context.Context, client *GarageClient, roles []nodeRoleChange) (*clusterLayoutResponse, error) {
+	reqBody := updateClusterLayoutRequest{Roles: roles}
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	url := fmt.Sprintf("%s://%s/v2/UpdateClusterLayout", client.Scheme, client.Host)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+client.Token)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer func() {
+		if resp.Body != nil {
+			_, _ = io.Copy(io.Discard, resp.Body)
+			_ = resp.Body.Close()
+		}
+	}()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("API error (status %d): %s", resp.StatusCode, string(body))
+	}
+
+	var layout clusterLayoutResponse
+	if err := json.Unmarshal(body, &layout); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
+	}
+
+	return &layout, nil
+}
+
+// buildNodeRoles converts terraform schema roles to nodeRoleChange slice.
+func buildNodeRoles(roles []interface{}) []nodeRoleChange {
+	nodeRoles := make([]nodeRoleChange, len(roles))
+	for i, role := range roles {
+		r := role.(map[string]interface{})
+		nodeRole := nodeRoleChange{
+			Id:   r["id"].(string),
+			Zone: r["zone"].(string),
+			Tags: expandStringList(r["tags"].([]interface{})),
+		}
+		if capacity, ok := r["capacity"].(int); ok && capacity > 0 {
+			c := int64(capacity)
+			nodeRole.Capacity = &c
+		}
+		nodeRoles[i] = nodeRole
+	}
+	return nodeRoles
+}
 
 func resourceGarageClusterLayout() *schema.Resource {
 	return &schema.Resource{
@@ -60,37 +167,16 @@ func resourceGarageClusterLayoutCreate(ctx context.Context, d *schema.ResourceDa
 	client := m.(*GarageClient)
 
 	roles := d.Get("roles").([]interface{})
-	nodeRoles := make([]garage.NodeRoleChangeRequest, len(roles))
+	nodeRoles := buildNodeRoles(roles)
 
-	for i, role := range roles {
-		r := role.(map[string]interface{})
-		nodeRole := garage.NewNodeRoleChangeRequestOneOf1(
-			expandStringList(r["tags"].([]interface{})),
-			r["zone"].(string),
-			r["id"].(string),
-		)
-		if capacity, ok := r["capacity"].(int); ok && capacity > 0 {
-			nodeRole.SetCapacity(int64(capacity))
-		}
-		nodeRoles[i] = garage.NodeRoleChangeRequestOneOf1AsNodeRoleChangeRequest(nodeRole)
-	}
-
-	req := garage.NewUpdateClusterLayoutRequest()
-	req.SetRoles(nodeRoles)
-
-	layout, resp, err := client.Client.ClusterLayoutAPI.UpdateClusterLayout(client.WithAuth(ctx)).UpdateClusterLayoutRequest(*req).Execute()
+	layout, err := updateClusterLayoutRaw(ctx, client, nodeRoles)
 	if err != nil {
 		return diag.FromErr(fmt.Errorf("failed to update cluster layout: %w", err))
 	}
-	defer func() {
-		if resp.Body != nil {
-			_ = resp.Body.Close()
-		}
-	}()
 
-	// Apply the layout changes
-	applyReq := garage.NewApplyClusterLayoutRequest(int64(layout.GetVersion()))
-	_, resp, err = client.Client.ClusterLayoutAPI.ApplyClusterLayout(client.WithAuth(ctx)).ApplyClusterLayoutRequest(*applyReq).Execute()
+	// Apply the layout changes - version must be current + 1
+	applyReq := garage.NewApplyClusterLayoutRequest(layout.Version + 1)
+	_, resp, err := client.Client.ClusterLayoutAPI.ApplyClusterLayout(client.WithAuth(ctx)).ApplyClusterLayoutRequest(*applyReq).Execute()
 	if err != nil {
 		return diag.FromErr(fmt.Errorf("failed to apply cluster layout: %w", err))
 	}
@@ -101,7 +187,7 @@ func resourceGarageClusterLayoutCreate(ctx context.Context, d *schema.ResourceDa
 	}()
 
 	d.SetId("cluster-layout")
-	if err := d.Set("version", layout.GetVersion()); err != nil {
+	if err := d.Set("version", layout.Version+1); err != nil {
 		return diag.FromErr(err)
 	}
 
@@ -166,37 +252,16 @@ func resourceGarageClusterLayoutUpdate(ctx context.Context, d *schema.ResourceDa
 
 	if d.HasChange("roles") {
 		roles := d.Get("roles").([]interface{})
-		nodeRoles := make([]garage.NodeRoleChangeRequest, len(roles))
+		nodeRoles := buildNodeRoles(roles)
 
-		for i, role := range roles {
-			r := role.(map[string]interface{})
-			nodeRole := garage.NewNodeRoleChangeRequestOneOf1(
-				expandStringList(r["tags"].([]interface{})),
-				r["zone"].(string),
-				r["id"].(string),
-			)
-			if capacity, ok := r["capacity"].(int); ok && capacity > 0 {
-				nodeRole.SetCapacity(int64(capacity))
-			}
-			nodeRoles[i] = garage.NodeRoleChangeRequestOneOf1AsNodeRoleChangeRequest(nodeRole)
-		}
-
-		req := garage.NewUpdateClusterLayoutRequest()
-		req.SetRoles(nodeRoles)
-
-		layout, resp, err := client.Client.ClusterLayoutAPI.UpdateClusterLayout(client.WithAuth(ctx)).UpdateClusterLayoutRequest(*req).Execute()
+		layout, err := updateClusterLayoutRaw(ctx, client, nodeRoles)
 		if err != nil {
 			return diag.FromErr(fmt.Errorf("failed to update cluster layout: %w", err))
 		}
-		defer func() {
-			if resp.Body != nil {
-				_ = resp.Body.Close()
-			}
-		}()
 
-		// Apply the layout changes
-		applyReq := garage.NewApplyClusterLayoutRequest(int64(layout.GetVersion()))
-		_, resp, err = client.Client.ClusterLayoutAPI.ApplyClusterLayout(client.WithAuth(ctx)).ApplyClusterLayoutRequest(*applyReq).Execute()
+		// Apply the layout changes - version must be current + 1
+		applyReq := garage.NewApplyClusterLayoutRequest(layout.Version + 1)
+		_, resp, err := client.Client.ClusterLayoutAPI.ApplyClusterLayout(client.WithAuth(ctx)).ApplyClusterLayoutRequest(*applyReq).Execute()
 		if err != nil {
 			return diag.FromErr(fmt.Errorf("failed to apply cluster layout: %w", err))
 		}
