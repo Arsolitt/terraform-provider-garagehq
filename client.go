@@ -7,10 +7,10 @@ import (
 )
 
 type GarageClient struct {
-	Client  *garage.APIClient
-	Token   string
-	Scheme  string
-	Host    string
+	Client *garage.APIClient
+	Token  string
+	Scheme string
+	Host   string
 }
 
 func NewGarageClient(scheme, host, token string) (*GarageClient, error) {
