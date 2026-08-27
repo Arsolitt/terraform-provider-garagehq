@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.1.1](https://github.com/Arsolitt/terraform-provider-garagehq/compare/v1.1.0...v1.1.1) (2026-08-27)
+
+
+### Bug Fixes
+
+* **bucket:** avoid nil-deref panic in lifecycle helpers ([#4](https://github.com/Arsolitt/terraform-provider-garagehq/issues/4)) ([9765f25](https://github.com/Arsolitt/terraform-provider-garagehq/commit/9765f2514399b1cbd07139cbd6bf80a5e4c5e91a))
+* **deps:** bump grpc, x/net, x/text, x/mod past known CVEs ([5fad5a6](https://github.com/Arsolitt/terraform-provider-garagehq/commit/5fad5a6d71e7bb11cdabd556a46466187dd57119))
+
 ## [1.1.0](https://github.com/Arsolitt/terraform-provider-garagehq/compare/v1.0.0...v1.1.0) (2026-02-20)
 
 
