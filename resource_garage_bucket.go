@@ -64,7 +64,7 @@ func resourceGarageBucketCreate(ctx context.Context, d *schema.ResourceData, m i
 		return diag.FromErr(fmt.Errorf("failed to create bucket: %w", err))
 	}
 	defer func() {
-		if resp.Body != nil {
+		if resp != nil && resp.Body != nil {
 			_ = resp.Body.Close()
 		}
 	}()
@@ -111,7 +111,7 @@ func resourceGarageBucketRead(ctx context.Context, d *schema.ResourceData, m int
 		return diag.FromErr(fmt.Errorf("failed to read bucket: %w", err))
 	}
 	defer func() {
-		if resp.Body != nil {
+		if resp != nil && resp.Body != nil {
 			_ = resp.Body.Close()
 		}
 	}()
@@ -178,7 +178,7 @@ func resourceGarageBucketDelete(ctx context.Context, d *schema.ResourceData, m i
 		return diag.FromErr(fmt.Errorf("failed to delete bucket: %w", err))
 	}
 	defer func() {
-		if resp.Body != nil {
+		if resp != nil && resp.Body != nil {
 			_ = resp.Body.Close()
 		}
 	}()
@@ -216,7 +216,7 @@ func setBucketLifecyclePolicy(ctx context.Context, client *GarageClient, bucketI
 		return fmt.Errorf("failed to get bucket info: %w", err)
 	}
 	defer func() {
-		if resp.Body != nil {
+		if resp != nil && resp.Body != nil {
 			_ = resp.Body.Close()
 		}
 	}()
@@ -263,18 +263,22 @@ func setBucketLifecyclePolicy(ctx context.Context, client *GarageClient, bucketI
 
 	// Execute request
 	httpClient := &http.Client{}
-	resp, err = httpClient.Do(req)
+	// Use a distinct variable: reassigning `resp` here would clobber the
+	// GetBucketInfo response that the deferred Close above closes over —
+	// nil-dereference panic when this request fails, and a leaked/double-closed
+	// body when it succeeds.
+	s3Resp, err := httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to execute request: %w", err)
 	}
 	defer func() {
-		if resp.Body != nil {
-			_ = resp.Body.Close()
+		if s3Resp != nil && s3Resp.Body != nil {
+			_ = s3Resp.Body.Close()
 		}
 	}()
 
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
-		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	if s3Resp.StatusCode != http.StatusOK && s3Resp.StatusCode != http.StatusNoContent {
+		return fmt.Errorf("unexpected status code: %d", s3Resp.StatusCode)
 	}
 
 	return nil
@@ -288,7 +292,7 @@ func getBucketLifecyclePolicy(ctx context.Context, client *GarageClient, bucketI
 		return 0, fmt.Errorf("failed to get bucket info: %w", err)
 	}
 	defer func() {
-		if resp.Body != nil {
+		if resp != nil && resp.Body != nil {
 			_ = resp.Body.Close()
 		}
 	}()
@@ -316,27 +320,31 @@ func getBucketLifecyclePolicy(ctx context.Context, client *GarageClient, bucketI
 
 	// Execute request
 	httpClient := &http.Client{}
-	resp, err = httpClient.Do(req)
+	// Use a distinct variable: reassigning `resp` here would clobber the
+	// GetBucketInfo response that the deferred Close above closes over —
+	// nil-dereference panic when this request fails, and a leaked/double-closed
+	// body when it succeeds.
+	s3Resp, err := httpClient.Do(req)
 	if err != nil {
 		return 0, fmt.Errorf("failed to execute request: %w", err)
 	}
 	defer func() {
-		if resp.Body != nil {
-			_ = resp.Body.Close()
+		if s3Resp != nil && s3Resp.Body != nil {
+			_ = s3Resp.Body.Close()
 		}
 	}()
 
-	if resp.StatusCode == http.StatusNotFound {
+	if s3Resp.StatusCode == http.StatusNotFound {
 		return 0, nil // No lifecycle policy set
 	}
 
-	if resp.StatusCode != http.StatusOK {
-		return 0, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	if s3Resp.StatusCode != http.StatusOK {
+		return 0, fmt.Errorf("unexpected status code: %d", s3Resp.StatusCode)
 	}
 
 	// Parse XML response
 	var lifecycleConfig LifecycleConfiguration
-	if err := xml.NewDecoder(resp.Body).Decode(&lifecycleConfig); err != nil {
+	if err := xml.NewDecoder(s3Resp.Body).Decode(&lifecycleConfig); err != nil {
 		return 0, fmt.Errorf("failed to decode response: %w", err)
 	}
 
@@ -356,7 +364,7 @@ func deleteBucketLifecyclePolicy(ctx context.Context, client *GarageClient, buck
 		return fmt.Errorf("failed to get bucket info: %w", err)
 	}
 	defer func() {
-		if resp.Body != nil {
+		if resp != nil && resp.Body != nil {
 			_ = resp.Body.Close()
 		}
 	}()
@@ -384,18 +392,22 @@ func deleteBucketLifecyclePolicy(ctx context.Context, client *GarageClient, buck
 
 	// Execute request
 	httpClient := &http.Client{}
-	resp, err = httpClient.Do(req)
+	// Use a distinct variable: reassigning `resp` here would clobber the
+	// GetBucketInfo response that the deferred Close above closes over —
+	// nil-dereference panic when this request fails, and a leaked/double-closed
+	// body when it succeeds.
+	s3Resp, err := httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to execute request: %w", err)
 	}
 	defer func() {
-		if resp.Body != nil {
-			_ = resp.Body.Close()
+		if s3Resp != nil && s3Resp.Body != nil {
+			_ = s3Resp.Body.Close()
 		}
 	}()
 
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusNotFound {
-		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	if s3Resp.StatusCode != http.StatusOK && s3Resp.StatusCode != http.StatusNoContent && s3Resp.StatusCode != http.StatusNotFound {
+		return fmt.Errorf("unexpected status code: %d", s3Resp.StatusCode)
 	}
 
 	return nil
