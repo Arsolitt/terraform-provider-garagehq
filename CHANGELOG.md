@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.1.2](https://github.com/Arsolitt/terraform-provider-garagehq/compare/v1.1.1...v1.1.2) (2026-08-30)
+
+
+### Bug Fixes
+
+* **deps:** update garage-admin-sdk-golang for Garage v2.3.0 routingRules ([d8a0378](https://github.com/Arsolitt/terraform-provider-garagehq/commit/d8a0378c207abd5b808dc13879cbc5ec4e7c0a64))
+* **deps:** update garage-admin-sdk-golang for Garage v2.3.0 routingRules ([7005f15](https://github.com/Arsolitt/terraform-provider-garagehq/commit/7005f15ed3954bc7a5f65094c0b0734ca5bb28b3))
+
 ## [1.1.1](https://github.com/Arsolitt/terraform-provider-garagehq/compare/v1.1.0...v1.1.1) (2026-08-27)
 
 
