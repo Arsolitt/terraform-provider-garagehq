@@ -36,6 +36,20 @@ resource "garage_bucket" "uploads" {
 }
 ```
 
+### Website Hosting Bucket
+
+```hcl
+resource "garage_bucket" "static_site" {
+  global_alias = "static-content"
+
+  website_access {
+    enabled        = true
+    index_document = "index.html"
+    error_document = "error.html"
+  }
+}
+```
+
 ### Backup Bucket with Key
 
 ```hcl
@@ -70,6 +84,16 @@ terraform import garage_bucket.my_bucket abc123def456
 
 - `global_alias` (String) - Global alias for the bucket. This appears as the bucket name in S3 API calls.
 - `expiration_days` (Number) - Number of days after which objects will be automatically deleted. Set to 0 to disable expiration.
+- `website_access` (Block List, Max: 1) - Website hosting configuration for the bucket (see [below](#nested-schema-for-website_access)).
+
+<a id="nested-schema-for-website_access"></a>
+### Nested Schema for `website_access`
+
+Optional:
+
+- `enabled` (Boolean) - Whether website access is enabled for this bucket. Defaults to `false`.
+- `index_document` (String) - Name of the index document served at the root of the website (e.g. `index.html`).
+- `error_document` (String) - Name of the error document served on errors (e.g. `error.html`).
 
 ### Read-Only
 

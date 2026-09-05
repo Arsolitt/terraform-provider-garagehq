@@ -46,6 +46,32 @@ func resourceGarageBucket() *schema.Resource {
 				Optional:    true,
 				Description: "Number of days after which objects in this bucket will be automatically deleted. Set to 0 to disable expiration.",
 			},
+			"website_access": {
+				Type:        schema.TypeList,
+				Optional:    true,
+				MaxItems:    1,
+				Description: "Website hosting configuration for the bucket. When set, the bucket is served over the Garage S3 web endpoint.",
+				Elem: &schema.Resource{
+					Schema: map[string]*schema.Schema{
+						"enabled": {
+							Type:        schema.TypeBool,
+							Optional:    true,
+							Default:     false,
+							Description: "Whether website access is enabled for this bucket.",
+						},
+						"index_document": {
+							Type:        schema.TypeString,
+							Optional:    true,
+							Description: "Name of the index document served at the root of the website (e.g. index.html).",
+						},
+						"error_document": {
+							Type:        schema.TypeString,
+							Optional:    true,
+							Description: "Name of the error document served on errors (e.g. error.html).",
+						},
+					},
+				},
+			},
 		},
 	}
 }
@@ -95,7 +121,14 @@ func resourceGarageBucketCreate(ctx context.Context, d *schema.ResourceData, m i
 		}
 	}
 
-	return nil
+	// Set website access configuration if specified
+	if _, ok := d.GetOk("website_access"); ok {
+		if err := setBucketWebsiteAccess(ctx, client, bucket.GetId(), d.Get("website_access").([]interface{})); err != nil {
+			return diag.FromErr(fmt.Errorf("failed to set website access: %w", err))
+		}
+	}
+
+	return resourceGarageBucketRead(ctx, d, m)
 }
 
 func resourceGarageBucketRead(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
@@ -144,6 +177,24 @@ func resourceGarageBucketRead(ctx context.Context, d *schema.ResourceData, m int
 		}
 	}
 
+	// Read website access configuration
+	if bucket.GetWebsiteAccess() {
+		websiteAccess := map[string]interface{}{
+			"enabled": true,
+		}
+		if config, ok := bucket.GetWebsiteConfigOk(); ok && config != nil {
+			websiteAccess["index_document"] = config.GetIndexDocument()
+			websiteAccess["error_document"] = config.GetErrorDocument()
+		}
+		if err := d.Set("website_access", []interface{}{websiteAccess}); err != nil {
+			return diag.FromErr(err)
+		}
+	} else {
+		if err := d.Set("website_access", []interface{}{}); err != nil {
+			return diag.FromErr(err)
+		}
+	}
+
 	return nil
 }
 
@@ -166,6 +217,13 @@ func resourceGarageBucketUpdate(ctx context.Context, d *schema.ResourceData, m i
 		}
 	}
 
+	// Handle website access changes
+	if d.HasChange("website_access") {
+		if err := setBucketWebsiteAccess(ctx, client, bucketID, d.Get("website_access").([]interface{})); err != nil {
+			return diag.FromErr(fmt.Errorf("failed to update website access: %w", err))
+		}
+	}
+
 	return resourceGarageBucketRead(ctx, d, m)
 }
 
@@ -184,6 +242,39 @@ func resourceGarageBucketDelete(ctx context.Context, d *schema.ResourceData, m i
 	}()
 
 	d.SetId("")
+	return nil
+}
+
+// setBucketWebsiteAccess applies the website hosting configuration for a bucket
+// via the admin API UpdateBucket endpoint. An empty configuration list disables
+// website access.
+func setBucketWebsiteAccess(ctx context.Context, client *GarageClient, bucketID string, config []interface{}) error {
+	websiteAccess := garage.NewUpdateBucketWebsiteAccess(false)
+
+	if len(config) > 0 && config[0] != nil {
+		cfg := config[0].(map[string]interface{})
+		websiteAccess.SetEnabled(cfg["enabled"].(bool))
+		if v, ok := cfg["index_document"].(string); ok && v != "" {
+			websiteAccess.SetIndexDocument(v)
+		}
+		if v, ok := cfg["error_document"].(string); ok && v != "" {
+			websiteAccess.SetErrorDocument(v)
+		}
+	}
+
+	updateReq := garage.NewUpdateBucketRequestBody()
+	updateReq.SetWebsiteAccess(*websiteAccess)
+
+	_, resp, err := client.Client.BucketAPI.UpdateBucket(client.WithAuth(ctx)).Id(bucketID).UpdateBucketRequestBody(*updateReq).Execute()
+	if err != nil {
+		return fmt.Errorf("failed to update bucket website access: %w", err)
+	}
+	defer func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	}()
+
 	return nil
 }
 
