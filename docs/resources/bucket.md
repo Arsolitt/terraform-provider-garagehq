@@ -92,8 +92,8 @@ terraform import garage_bucket.my_bucket abc123def456
 Optional:
 
 - `enabled` (Boolean) - Whether website access is enabled for this bucket. Defaults to `false`.
-- `index_document` (String) - Name of the index document served at the root of the website (e.g. `index.html`).
-- `error_document` (String) - Name of the error document served on errors (e.g. `error.html`).
+- `index_document` (String) - Name of the index document served at the root of the website (e.g. `index.html`). Required when `enabled` is `true`.
+- `error_document` (String) - Name of the error document served on errors (e.g. `error.html`). Only used when `enabled` is `true`.
 
 ### Read-Only
 

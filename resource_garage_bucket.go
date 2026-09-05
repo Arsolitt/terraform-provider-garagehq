@@ -50,7 +50,7 @@ func resourceGarageBucket() *schema.Resource {
 				Type:        schema.TypeList,
 				Optional:    true,
 				MaxItems:    1,
-				Description: "Website hosting configuration for the bucket. When set, the bucket is served over the Garage S3 web endpoint.",
+				Description: "Website hosting configuration for the bucket. When enabled, the bucket is served over the Garage S3 web endpoint.",
 				Elem: &schema.Resource{
 					Schema: map[string]*schema.Schema{
 						"enabled": {
@@ -245,21 +245,42 @@ func resourceGarageBucketDelete(ctx context.Context, d *schema.ResourceData, m i
 	return nil
 }
 
-// setBucketWebsiteAccess applies the website hosting configuration for a bucket
-// via the admin API UpdateBucket endpoint. An empty configuration list disables
-// website access.
-func setBucketWebsiteAccess(ctx context.Context, client *GarageClient, bucketID string, config []interface{}) error {
+// buildWebsiteAccess converts the website_access schema block into an
+// UpdateBucketWebsiteAccess payload. Garage requires indexDocument when
+// website access is enabled, and rejects any documents when it is disabled,
+// so documents are validated and sent accordingly.
+func buildWebsiteAccess(config []interface{}) (*garage.UpdateBucketWebsiteAccess, error) {
 	websiteAccess := garage.NewUpdateBucketWebsiteAccess(false)
 
 	if len(config) > 0 && config[0] != nil {
 		cfg := config[0].(map[string]interface{})
-		websiteAccess.SetEnabled(cfg["enabled"].(bool))
-		if v, ok := cfg["index_document"].(string); ok && v != "" {
-			websiteAccess.SetIndexDocument(v)
+		enabled := cfg["enabled"].(bool)
+		websiteAccess.SetEnabled(enabled)
+
+		if enabled {
+			index, _ := cfg["index_document"].(string)
+			if index == "" {
+				return nil, fmt.Errorf("index_document is required when website access is enabled")
+			}
+			websiteAccess.SetIndexDocument(index)
+			if v, ok := cfg["error_document"].(string); ok && v != "" {
+				websiteAccess.SetErrorDocument(v)
+			}
 		}
-		if v, ok := cfg["error_document"].(string); ok && v != "" {
-			websiteAccess.SetErrorDocument(v)
-		}
+		// When disabled, index_document/error_document are intentionally not
+		// sent: Garage rejects any documents alongside enabled=false.
+	}
+
+	return websiteAccess, nil
+}
+
+// setBucketWebsiteAccess applies the website hosting configuration for a bucket
+// via the admin API UpdateBucket endpoint. An empty configuration list disables
+// website access.
+func setBucketWebsiteAccess(ctx context.Context, client *GarageClient, bucketID string, config []interface{}) error {
+	websiteAccess, err := buildWebsiteAccess(config)
+	if err != nil {
+		return err
 	}
 
 	updateReq := garage.NewUpdateBucketRequestBody()
@@ -267,7 +288,7 @@ func setBucketWebsiteAccess(ctx context.Context, client *GarageClient, bucketID 
 
 	_, resp, err := client.Client.BucketAPI.UpdateBucket(client.WithAuth(ctx)).Id(bucketID).UpdateBucketRequestBody(*updateReq).Execute()
 	if err != nil {
-		return fmt.Errorf("failed to update bucket website access: %w", err)
+		return err
 	}
 	defer func() {
 		if resp != nil && resp.Body != nil {
