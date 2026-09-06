@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.2.0](https://github.com/Arsolitt/terraform-provider-garagehq/compare/v1.1.2...v1.2.0) (2026-09-06)
+
+
+### Features
+
+* **bucket:** add website_access configuration block ([73856cd](https://github.com/Arsolitt/terraform-provider-garagehq/commit/73856cdf7fa1df0b3752ab42a30cdb9986f9e040))
+* **bucket:** add website_access configuration block ([d35d560](https://github.com/Arsolitt/terraform-provider-garagehq/commit/d35d5606357e4625c394adb08a835e1c364a9aa2))
+
+
+### Bug Fixes
+
+* **bucket:** validate website_access constraints and drop docs when disabled ([71b1782](https://github.com/Arsolitt/terraform-provider-garagehq/commit/71b17829baa8cb2aaf1aa312302da7b8033d5584))
+
 ## [1.1.2](https://github.com/Arsolitt/terraform-provider-garagehq/compare/v1.1.1...v1.1.2) (2026-08-30)
 
 
