@@ -172,12 +172,14 @@ resource "garage_cluster_layout" "example" {
 
 ## Important Considerations
 
-1. **Layout Changes**: Changes to the layout are applied immediately. Ensure you have proper change management procedures.
+1. **Layout Changes**: Changes to the layout are applied immediately. Ensure you have proper change management procedures. The provider stages only the roles that are different from the current layout, and applies a new layout version only when it staged a change.
 
-2. **Node IDs**: The node ID must match the ID configured in the Garage node's configuration file.
+2. **Staged Changes**: The provider refuses to change the layout when it has staged changes that are not applied, for example from `garage layout assign`, because the apply would also apply them. Apply or revert them first (`garage layout apply` or `garage layout revert`). When Garage refuses to apply the layout, the provider reverts the changes that it staged.
 
-3. **Gateway Nodes**: Nodes without a `capacity` attribute operate as gateways, routing requests but not storing data.
+3. **Node IDs**: The node ID must match the ID configured in the Garage node's configuration file.
 
-4. **Zone Replication**: Data is replicated across zones. Ensure you have nodes in at least 3 zones for production deployments.
+4. **Gateway Nodes**: Nodes without a `capacity` attribute operate as gateways, routing requests but not storing data.
 
-5. **Capacity Planning**: Total cluster capacity should account for replication factor and desired redundancy.
+5. **Zone Replication**: Data is replicated across zones. Ensure you have nodes in at least 3 zones for production deployments.
+
+6. **Capacity Planning**: Total cluster capacity should account for replication factor and desired redundancy.

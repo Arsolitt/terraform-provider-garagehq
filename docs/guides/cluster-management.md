@@ -271,6 +271,10 @@ Simply remove the node from the `roles` block. Data will be redistributed to rem
 
 Update the `capacity` value. Garage will rebalance data accordingly.
 
+### Staged Changes
+
+The provider stages only the roles that are different from the current layout, and applies a new layout version only when it staged a change. It refuses to change a layout that has staged changes that are not applied, for example from `garage layout assign`, because the apply would also apply them. Apply or revert them first with `garage layout apply` or `garage layout revert`.
+
 ## Monitoring Layout
 
 Output layout version for tracking:
