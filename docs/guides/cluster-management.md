@@ -265,7 +265,9 @@ resource "garage_cluster_layout" "production" {
 
 ### Removing Nodes
 
-Simply remove the node from the `roles` block. Data will be redistributed to remaining nodes.
+Remove the node from the `roles` block. The provider removes the node from the layout and applies a new layout version. Garage then moves the data of the node to the remaining nodes.
+
+The provider removes only the nodes that were in `roles` before. It does not remove a node that the configuration never managed.
 
 ### Changing Capacity
 

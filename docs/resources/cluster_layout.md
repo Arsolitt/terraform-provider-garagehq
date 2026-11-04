@@ -176,10 +176,12 @@ resource "garage_cluster_layout" "example" {
 
 2. **Staged Changes**: The provider refuses to change the layout when it has staged changes that are not applied, for example from `garage layout assign`, because the apply would also apply them. Apply or revert them first (`garage layout apply` or `garage layout revert`). When Garage refuses to apply the layout, the provider reverts the changes that it staged.
 
-3. **Node IDs**: The node ID must match the ID configured in the Garage node's configuration file.
+3. **Managed Nodes**: The resource manages only the nodes in `roles`. It does not change or remove the role of a node that is not in `roles`, and that node is not in the state. When you remove a node from `roles`, the provider removes the node from the layout. When a managed node leaves the layout outside Terraform, the next plan adds it again.
 
-4. **Gateway Nodes**: Nodes without a `capacity` attribute operate as gateways, routing requests but not storing data.
+4. **Node IDs**: The node ID must match the ID configured in the Garage node's configuration file.
 
-5. **Zone Replication**: Data is replicated across zones. Ensure you have nodes in at least 3 zones for production deployments.
+5. **Gateway Nodes**: Nodes without a `capacity` attribute operate as gateways, routing requests but not storing data.
 
-6. **Capacity Planning**: Total cluster capacity should account for replication factor and desired redundancy.
+6. **Zone Replication**: Data is replicated across zones. Ensure you have nodes in at least 3 zones for production deployments.
+
+7. **Capacity Planning**: Total cluster capacity should account for replication factor and desired redundancy.

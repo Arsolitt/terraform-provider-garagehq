@@ -227,7 +227,7 @@ func resourceGarageClusterLayout() *schema.Resource {
 func resourceGarageClusterLayoutCreate(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
 	client := m.(*GarageClient)
 
-	version, err := applyClusterLayoutRoles(ctx, client, buildNodeRoles(d.Get("roles").([]interface{})))
+	version, err := applyClusterLayoutRoles(ctx, client, buildNodeRoles(d.Get("roles").([]interface{})), nil)
 	if err != nil {
 		return diag.FromErr(err)
 	}
@@ -245,10 +245,13 @@ func resourceGarageClusterLayoutCreate(ctx context.Context, d *schema.ResourceDa
 // does not apply a new version when all roles are already current. It
 // returns the layout version after the change.
 //
+// It also removes the nodes in removed from the layout. It ignores a node
+// in removed that is not in the layout.
+//
 // It refuses to continue when the layout already has staged changes,
 // because the apply would also apply these changes. If the apply fails,
 // it reverts the changes that it staged.
-func applyClusterLayoutRoles(ctx context.Context, client *GarageClient, desired []nodeRoleChange) (int64, error) {
+func applyClusterLayoutRoles(ctx context.Context, client *GarageClient, desired []nodeRoleChange, removed []string) (int64, error) {
 	layout, err := getClusterLayoutRaw(ctx, client)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get cluster layout: %w", err)
@@ -267,6 +270,12 @@ func applyClusterLayoutRoles(ctx context.Context, client *GarageClient, desired 
 			continue
 		}
 		changes = append(changes, role)
+	}
+	remove := true
+	for _, id := range removed {
+		if _, ok := current[id]; ok {
+			changes = append(changes, nodeRoleChange{Id: id, Remove: &remove})
+		}
 	}
 	if len(changes) == 0 {
 		return layout.Version, nil
@@ -383,7 +392,9 @@ func resourceGarageClusterLayoutUpdate(ctx context.Context, d *schema.ResourceDa
 	client := m.(*GarageClient)
 
 	if d.HasChange("roles") {
-		version, err := applyClusterLayoutRoles(ctx, client, buildNodeRoles(d.Get("roles").([]interface{})))
+		oldRoles, newRoles := d.GetChange("roles")
+		desired := buildNodeRoles(newRoles.([]interface{}))
+		version, err := applyClusterLayoutRoles(ctx, client, desired, removedNodeIDs(buildNodeRoles(oldRoles.([]interface{})), desired))
 		if err != nil {
 			return diag.FromErr(err)
 		}
@@ -393,6 +404,22 @@ func resourceGarageClusterLayoutUpdate(ctx context.Context, d *schema.ResourceDa
 	}
 
 	return resourceGarageClusterLayoutRead(ctx, d, m)
+}
+
+// removedNodeIDs returns the IDs of the nodes in oldRoles that are not in
+// newRoles. These are the nodes that the configuration no longer manages.
+func removedNodeIDs(oldRoles, newRoles []nodeRoleChange) []string {
+	keep := make(map[string]bool, len(newRoles))
+	for _, role := range newRoles {
+		keep[role.Id] = true
+	}
+	var removed []string
+	for _, role := range oldRoles {
+		if !keep[role.Id] {
+			removed = append(removed, role.Id)
+		}
+	}
+	return removed
 }
 
 func resourceGarageClusterLayoutDelete(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {

@@ -190,6 +190,23 @@ func (r testAccLayoutRole) String() string {
 
 // testAccCheckLayoutVersion checks the version of the layout, and that the
 // `version` attribute of the resource is the same.
+// testAccCheckNoLayoutRole checks that the node has no role in the cluster
+// layout.
+func testAccCheckNoLayoutRole(client *GarageClient, id string) resource.TestCheckFunc {
+	return func(*terraform.State) error {
+		layout, err := getClusterLayoutRaw(context.Background(), client)
+		if err != nil {
+			return err
+		}
+		for _, role := range layout.Roles {
+			if role.Id == id {
+				return fmt.Errorf("node %s still has a role in the cluster layout", id)
+			}
+		}
+		return nil
+	}
+}
+
 func testAccCheckLayoutVersion(client *GarageClient, name string, want int64) resource.TestCheckFunc {
 	return func(s *terraform.State) error {
 		layout, err := getClusterLayoutRaw(context.Background(), client)
@@ -324,6 +341,42 @@ func TestAccGarageClusterLayout_stagedChanges(t *testing.T) {
 				PlanOnly: true,
 				// Create failed, thus there is still a resource to create.
 				ExpectNonEmptyPlan: true,
+			},
+		},
+	})
+}
+
+func TestAccGarageClusterLayout_removeNode(t *testing.T) {
+	self := testAccLayoutPreCheck(t)
+	client := testAccClient(t)
+	version := testAccGetLayout(t, client).Version
+	selfRole := testAccClusterLayoutRole(self.id, self.zone, strconv.FormatInt(*self.capacity, 10), self.tags...)
+
+	resource.Test(t, resource.TestCase{
+		ProtoV5ProviderFactories: testAccProtoV5ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccClusterLayoutConfig(selfRole, testAccClusterLayoutRole(testAccFakeNodeID, "acc-zone", "")),
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckLayoutRole(client, self),
+					testAccCheckLayoutRole(client, testAccLayoutRole{id: testAccFakeNodeID, zone: "acc-zone"}),
+					testAccCheckLayoutVersion(client, "garage_cluster_layout.test", version+1),
+				),
+			},
+			{
+				// The gateway is no longer in the configuration, thus it
+				// leaves the layout. Self keeps its role.
+				Config: testAccClusterLayoutConfig(selfRole),
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckNoLayoutRole(client, testAccFakeNodeID),
+					testAccCheckLayoutRole(client, self),
+					testAccCheckLayoutVersion(client, "garage_cluster_layout.test", version+2),
+					resource.TestCheckResourceAttr("garage_cluster_layout.test", "roles.#", "1"),
+				),
+			},
+			{
+				Config:   testAccClusterLayoutConfig(selfRole),
+				PlanOnly: true,
 			},
 		},
 	})
