@@ -1,4 +1,4 @@
-.PHONY: help build install test lint fmt lint-only clean release-dry-run
+.PHONY: help build install test testacc lint fmt lint-only clean release-dry-run
 
 # Docker image versions
 GOLANGCI_LINT_VERSION := v2.10.1
@@ -15,6 +15,7 @@ help:
 	@echo "  build          - Build the terraform provider"
 	@echo "  install        - Build and install the provider locally"
 	@echo "  test           - Run tests with coverage"
+	@echo "  testacc        - Run acceptance tests against a live Garage"
 	@echo "  lint           - Format code and run golangci-lint"
 	@echo "  fmt            - Format code using golangci-lint"
 	@echo "  lint-only      - Run golangci-lint without formatting"
@@ -34,6 +35,10 @@ install: build
 
 test:
 	go test -v -race -coverprofile=coverage.txt -covermode=atomic ./... || true
+
+# Acceptance tests need a live Garage: start one with scripts/acc-garage.sh
+testacc:
+	GARAGE_TOKEN=$${GARAGE_TOKEN:-acceptance-test-token} TF_ACC=1 go test -v -count=1 -run '^TestAcc' ./...
 
 # Format code using golangci-lint formatters (faster than separate tools)
 fmt:
