@@ -165,6 +165,18 @@ resource "garage_bucket_key" "cdn_readonly" {
 }
 ```
 
+### Key with Known Credentials
+
+Set `access_key_id` and `secret_access_key` together to import a key with credentials that you already know, for example to configure a client before the key exists:
+
+```hcl
+resource "garage_key" "app" {
+  name              = "app"
+  access_key_id     = var.app_access_key_id
+  secret_access_key = var.app_secret_access_key
+}
+```
+
 ### Scoped Admin Token for Monitoring
 
 ```hcl
@@ -341,7 +353,7 @@ Verify your admin token has the required permissions. Some operations require sp
 
 ### Secret Key Not Available
 
-The `secret_access_key` is only available on initial creation. If you need to recover it, you'll need to recreate the key.
+The `secret_access_key` is only available on initial creation. If you need to recover it, you'll need to recreate the key. To keep the credentials under your control, set `access_key_id` and `secret_access_key` on `garage_key` yourself.
 
 ### Lifecycle Policy Not Working
 
