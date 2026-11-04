@@ -30,6 +30,9 @@ func resourceGarageKey() *schema.Resource {
 		UpdateContext: resourceGarageKeyUpdate,
 		DeleteContext: resourceGarageKeyDelete,
 		CustomizeDiff: resourceGarageKeyCustomizeDiff,
+		Importer: &schema.ResourceImporter{
+			StateContext: resourceGarageKeyImport,
+		},
 		Schema: map[string]*schema.Schema{
 			"name": {
 				Type:        schema.TypeString,
@@ -59,7 +62,7 @@ func resourceGarageKey() *schema.Resource {
 					validation.StringMatch(secretAccessKeyLengthRegex, "must be at least 16 characters"),
 					validation.StringMatch(secretAccessKeyCharsRegex, "must contain only graphic ASCII characters (U+0021 to U+007E)"),
 				)),
-				Description: "The secret access key. Set it together with `access_key_id` to import a key with known credentials; otherwise Garage generates it (the provider records it only at create)",
+				Description: "The secret access key. Set it together with `access_key_id` to import a key with known credentials; otherwise Garage generates it (the provider records it at create and import time, not on later reads)",
 			},
 		},
 	}
@@ -154,6 +157,37 @@ func resourceGarageKeyRead(ctx context.Context, d *schema.ResourceData, m interf
 	}
 
 	return nil
+}
+
+// resourceGarageKeyImport reads the secret access key, which Read does not
+// request from Garage.
+func resourceGarageKeyImport(ctx context.Context, d *schema.ResourceData, m interface{}) ([]*schema.ResourceData, error) {
+	client := m.(*GarageClient)
+	keyID := d.Id()
+
+	key, resp, err := client.Client.AccessKeyAPI.GetKeyInfo(client.WithAuth(ctx)).Id(keyID).ShowSecretKey(true).Execute()
+	defer func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	}()
+	if err != nil {
+		return nil, fmt.Errorf("failed to read key %s: %w", keyID, garageAPIError(err))
+	}
+
+	// Without the secret, the state cannot match a configuration that sets
+	// it, so stop here.
+	secret := key.GetSecretAccessKey()
+	if secret == "" {
+		return nil, fmt.Errorf("failed to read key %s: response has no secret access key", keyID)
+	}
+
+	d.SetId(key.GetAccessKeyId())
+	if err := d.Set("secret_access_key", secret); err != nil {
+		return nil, err
+	}
+
+	return []*schema.ResourceData{d}, nil
 }
 
 func resourceGarageKeyUpdate(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {

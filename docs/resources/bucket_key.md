@@ -117,11 +117,23 @@ resource "garage_bucket_key" "admin_access" {
 
 ## Import
 
-Bucket key relationships can be imported using the format `bucket_id/access_key_id`:
+Bucket key relationships can be imported using the format `<bucket>/<access_key_id>`, where `<bucket>` is a bucket ID or a global alias of the bucket:
 
 ```bash
-terraform import garage_bucket_key.app_access "abc123def456/GK1234567890ABCDEF"
+terraform import garage_bucket_key.app_access "6a8e3f0f1b2c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6/GK31c2f218a2e44f485b94239e"
+terraform import garage_bucket_key.app_access "my-bucket/GK31c2f218a2e44f485b94239e"
 ```
+
+Or with an `import` block:
+
+```hcl
+import {
+  to = garage_bucket_key.app_access
+  id = "my-bucket/GK31c2f218a2e44f485b94239e"
+}
+```
+
+The provider resolves a global alias to the bucket ID, so the resource ID in the state is always `<bucket_id>/<access_key_id>`. The import fails if the key has no permissions on the bucket.
 
 ## Schema
 

@@ -87,8 +87,22 @@ resource "garage_admin_token" "service_account" {
 Admin tokens can be imported using the token ID:
 
 ```bash
-terraform import garage_admin_token.my_token tkn1234567890abcdef
+terraform import garage_admin_token.my_token 9d6e827f064df56812e37183
 ```
+
+Or with an `import` block:
+
+```hcl
+import {
+  to = garage_admin_token.my_token
+  id = "9d6e827f064df56812e37183"
+}
+```
+
+The token ID is the prefix of the bearer token before the first `.`. Some attributes do not come back from an import:
+
+- `secret_token` stays empty. Garage returns the secret only when it creates the token.
+- `never_expires` is `false` after the import. Garage does not return it. If your configuration sets `never_expires = true`, the first plan after the import shows an update of `never_expires`. If the token has no expiration in Garage, this update does not change the token. If the token has an expiration, this update removes it.
 
 ## Schema
 

@@ -52,6 +52,43 @@ func TestAccGarageAdminToken_expiration(t *testing.T) {
 	})
 }
 
+func TestAccGarageAdminToken_import(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		expiry string
+	}{
+		{"expiration", `expiration = "2099-01-01T00:00:00Z"`},
+		{"never-expires", `never_expires = true`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			name := acctest.RandomWithPrefix("acc-admin-token-import")
+
+			resource.Test(t, resource.TestCase{
+				PreCheck:                 func() { testAccPreCheck(t) },
+				ProtoV5ProviderFactories: testAccProtoV5ProviderFactories,
+				CheckDestroy:             testAccCheckGarageAdminTokenDestroy(t),
+				Steps: []resource.TestStep{
+					{
+						Config: testAccGarageAdminTokenConfig(name, tc.expiry),
+						Check: resource.ComposeAggregateTestCheckFunc(
+							resource.TestCheckResourceAttr("garage_admin_token.test", "name", name),
+							resource.TestCheckResourceAttrSet("garage_admin_token.test", "secret_token"),
+						),
+					},
+					{
+						// Garage returns the secret only on create, and does not
+						// return never_expires at all.
+						ResourceName:            "garage_admin_token.test",
+						ImportState:             true,
+						ImportStateVerify:       true,
+						ImportStateVerifyIgnore: []string{"secret_token", "never_expires"},
+					},
+				},
+			})
+		})
+	}
+}
+
 var testAccAdminTokenExpiration = time.Date(2099, 1, 1, 0, 0, 0, 0, time.UTC)
 
 func testAccGarageAdminTokenConfig(name, expiry string) string {

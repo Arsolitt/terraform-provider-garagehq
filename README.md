@@ -360,7 +360,7 @@ Verify your admin token has the required permissions. Some operations require sp
 
 ### Secret Key Not Available
 
-The provider records `secret_access_key` only at create time, so keep it in your secrets manager. Garage keeps the secret too and can show it with `garage key info --show-secret`. Do not recreate a key to recover its secret: with a configured `access_key_id`, the provider deletes the key and Garage refuses to import that ID again. To manage the credentials yourself, set `access_key_id` and `secret_access_key` together on a new key.
+The provider records `secret_access_key` at create and import time, not on later reads, so keep it in your secrets manager. Garage keeps the secret too and can show it with `garage key info --show-secret`. To record the secret in the state again, run `terraform state rm` on the key, then import the key: the import reads the secret from Garage. Do not recreate a key to recover its secret: with a configured `access_key_id`, the provider deletes the key and Garage refuses to import that ID again. To manage the credentials yourself, set `access_key_id` and `secret_access_key` together on a new key.
 
 ### Lifecycle Policy Not Working
 

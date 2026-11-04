@@ -32,6 +32,9 @@ func resourceGarageAdminToken() *schema.Resource {
 			}
 			return fmt.Errorf("expiration and never_expires conflict: set only one of them")
 		},
+		Importer: &schema.ResourceImporter{
+			StateContext: schema.ImportStatePassthroughContext,
+		},
 		Schema: map[string]*schema.Schema{
 			"name": {
 				Type:        schema.TypeString,

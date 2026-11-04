@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"slices"
+	"strings"
 
 	garage "git.deuxfleurs.fr/garage-sdk/garage-admin-sdk-golang"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
@@ -16,6 +18,9 @@ func resourceGarageBucketKey() *schema.Resource {
 		ReadContext:   resourceGarageBucketKeyRead,
 		UpdateContext: resourceGarageBucketKeyUpdate,
 		DeleteContext: resourceGarageBucketKeyDelete,
+		Importer: &schema.ResourceImporter{
+			StateContext: resourceGarageBucketKeyImport,
+		},
 		Schema: map[string]*schema.Schema{
 			"bucket_id": {
 				Type:        schema.TypeString,
@@ -118,6 +123,48 @@ func resourceGarageBucketKeyRead(ctx context.Context, d *schema.ResourceData, m 
 	// Key doesn't have permissions on this bucket
 	d.SetId("")
 	return nil
+}
+
+// resourceGarageBucketKeyImport accepts `<bucket>/<access_key_id>`.
+// `<bucket>` is a bucket ID or a global alias. The resource ID is
+// `<bucket_id>/<access_key_id>`.
+func resourceGarageBucketKeyImport(ctx context.Context, d *schema.ResourceData, m interface{}) ([]*schema.ResourceData, error) {
+	client := m.(*GarageClient)
+	idOrAlias, keyID, ok := strings.Cut(d.Id(), "/")
+	if !ok || idOrAlias == "" || keyID == "" || strings.Contains(keyID, "/") {
+		return nil, fmt.Errorf("invalid import ID %q: expected <bucket>/<access_key_id>", d.Id())
+	}
+
+	bucket, err := lookupBucket(ctx, client, idOrAlias)
+	if err != nil {
+		return nil, err
+	}
+	bucketID := bucket.GetId()
+
+	key, resp, err := client.Client.AccessKeyAPI.GetKeyInfo(client.WithAuth(ctx)).Id(keyID).Execute()
+	defer func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	}()
+	if err != nil {
+		return nil, fmt.Errorf("failed to read key %s: %w", keyID, garageAPIError(err))
+	}
+
+	hasBucket := func(b garage.KeyInfoBucketResponse) bool { return b.GetId() == bucketID }
+	if !slices.ContainsFunc(key.GetBuckets(), hasBucket) {
+		return nil, fmt.Errorf("key %q has no permissions on bucket %q", keyID, idOrAlias)
+	}
+
+	d.SetId(fmt.Sprintf("%s/%s", bucketID, keyID))
+	if err := d.Set("bucket_id", bucketID); err != nil {
+		return nil, err
+	}
+	if err := d.Set("access_key_id", keyID); err != nil {
+		return nil, err
+	}
+
+	return []*schema.ResourceData{d}, nil
 }
 
 func resourceGarageBucketKeyUpdate(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
