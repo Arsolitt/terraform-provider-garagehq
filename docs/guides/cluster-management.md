@@ -277,6 +277,10 @@ Update the `capacity` value. Garage will rebalance data accordingly.
 
 The provider stages only the roles that are different from the current layout, and applies a new layout version only when it staged a change. It refuses to change a layout that has staged changes that are not applied, for example from `garage layout assign`, because the apply would also apply them. Apply or revert them first with `garage layout apply` or `garage layout revert`.
 
+### Destroying the Layout Resource
+
+`terraform destroy` removes the `garage_cluster_layout` resource only from the state. The layout does not change, thus the cluster continues to operate. The provider also keeps the staged changes, because they can come from other tools.
+
 ## Monitoring Layout
 
 Output layout version for tracking:

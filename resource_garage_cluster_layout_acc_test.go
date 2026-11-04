@@ -190,6 +190,24 @@ func (r testAccLayoutRole) String() string {
 
 // testAccCheckLayoutVersion checks the version of the layout, and that the
 // `version` attribute of the resource is the same.
+// testAccStageLayout stages changes to the cluster layout, and reverts
+// them at the end of the test.
+func testAccStageLayout(t *testing.T, client *GarageClient, changes ...nodeRoleChange) {
+	t.Helper()
+	t.Cleanup(func() {
+		_, resp, err := client.Client.ClusterLayoutAPI.RevertClusterLayout(client.WithAuth(context.Background())).Execute()
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+		if err != nil {
+			t.Errorf("failed to revert cluster layout: %v", err)
+		}
+	})
+	if _, err := updateClusterLayoutRaw(context.Background(), client, changes); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // testAccCheckNoLayoutRole checks that the node has no role in the cluster
 // layout.
 func testAccCheckNoLayoutRole(client *GarageClient, id string) resource.TestCheckFunc {
@@ -313,18 +331,7 @@ func TestAccGarageClusterLayout_stagedChanges(t *testing.T) {
 		Steps: []resource.TestStep{
 			{
 				PreConfig: func() {
-					t.Cleanup(func() {
-						_, resp, err := client.Client.ClusterLayoutAPI.RevertClusterLayout(client.WithAuth(context.Background())).Execute()
-						if resp != nil && resp.Body != nil {
-							_ = resp.Body.Close()
-						}
-						if err != nil {
-							t.Errorf("failed to revert cluster layout: %v", err)
-						}
-					})
-					if _, err := updateClusterLayoutRaw(context.Background(), client, []nodeRoleChange{{Id: testAccFakeNodeID, Zone: "acc-zone"}}); err != nil {
-						t.Fatal(err)
-					}
+					testAccStageLayout(t, client, nodeRoleChange{Id: testAccFakeNodeID, Zone: "acc-zone"})
 				},
 				Config:      testAccClusterLayoutConfig(testAccClusterLayoutRole(self.id, "acc-zone", "2G")),
 				ExpectError: regexp.MustCompile("staged changes"),
@@ -403,6 +410,46 @@ func TestAccGarageClusterLayout_import(t *testing.T) {
 				ImportState:   true,
 				ImportStateId: "layout",
 				ExpectError:   regexp.MustCompile(`unexpected import ID`),
+			},
+		},
+	})
+}
+
+func TestAccGarageClusterLayout_destroy(t *testing.T) {
+	self := testAccLayoutPreCheck(t)
+	client := testAccClient(t)
+	version := testAccGetLayout(t, client).Version
+	fake := testAccLayoutRole{id: testAccFakeNodeID, zone: "acc-zone"}
+	config := testAccClusterLayoutConfig(testAccClusterLayoutRole(testAccFakeNodeID, "acc-zone", ""))
+	staged := strings.Repeat("b", 64)
+
+	resource.Test(t, resource.TestCase{
+		ProtoV5ProviderFactories: testAccProtoV5ProviderFactories,
+		// Destroy keeps the layout, and the changes that others staged.
+		CheckDestroy: func(s *terraform.State) error {
+			layout, err := getClusterLayoutRaw(context.Background(), client)
+			if err != nil {
+				return err
+			}
+			if layout.Version != version+1 || len(layout.StagedRoleChanges) != 1 {
+				return fmt.Errorf("got layout version %d with %d staged changes, want version %d with 1", layout.Version, len(layout.StagedRoleChanges), version+1)
+			}
+			return resource.ComposeTestCheckFunc(
+				testAccCheckLayoutRole(client, fake),
+				testAccCheckLayoutRole(client, self),
+			)(s)
+		},
+		Steps: []resource.TestStep{
+			{
+				Config: config,
+				Check:  testAccCheckLayoutVersion(client, "garage_cluster_layout.test", version+1),
+			},
+			{
+				PreConfig: func() {
+					testAccStageLayout(t, client, nodeRoleChange{Id: staged, Zone: "acc-zone"})
+				},
+				Config:   config,
+				PlanOnly: true,
 			},
 		},
 	})

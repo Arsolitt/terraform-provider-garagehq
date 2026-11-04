@@ -454,23 +454,11 @@ func removedNodeIDs(oldRoles, newRoles []nodeRoleChange) []string {
 	return removed
 }
 
+// resourceGarageClusterLayoutDelete removes the layout only from the state.
+// The cluster always has a layout, and to remove the roles of all nodes
+// would stop the cluster. It does not revert staged changes, because the
+// provider does not keep staged changes, and others can own them.
 func resourceGarageClusterLayoutDelete(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
-	// Cluster layout is a singleton resource, we can't really "delete" it
-	// Instead, we revert any staged changes
-	client := m.(*GarageClient)
-
-	_, resp, err := client.Client.ClusterLayoutAPI.RevertClusterLayout(client.WithAuth(ctx)).Execute()
-	if err != nil {
-		if resp != nil && resp.StatusCode != http.StatusNotFound {
-			return diag.FromErr(fmt.Errorf("failed to revert cluster layout: %w", err))
-		}
-	}
-	defer func() {
-		if resp != nil && resp.Body != nil {
-			_ = resp.Body.Close()
-		}
-	}()
-
 	d.SetId("")
 	return nil
 }
