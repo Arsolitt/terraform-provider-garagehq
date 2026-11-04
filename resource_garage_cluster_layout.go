@@ -186,6 +186,13 @@ func resourceGarageClusterLayout() *schema.Resource {
 		Importer: &schema.ResourceImporter{
 			StateContext: resourceGarageClusterLayoutImport,
 		},
+		// A change of the roles can apply a new layout version.
+		CustomizeDiff: func(ctx context.Context, d *schema.ResourceDiff, m interface{}) error {
+			if d.HasChange("roles") {
+				return d.SetNewComputed("version")
+			}
+			return nil
+		},
 		Schema: map[string]*schema.Schema{
 			"roles": {
 				Type:        schema.TypeList,
