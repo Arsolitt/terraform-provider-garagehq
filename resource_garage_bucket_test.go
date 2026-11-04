@@ -84,3 +84,25 @@ func TestBuildWebsiteAccess(t *testing.T) {
 		}
 	})
 }
+
+func TestSelectGlobalAlias(t *testing.T) {
+	cases := []struct {
+		name       string
+		aliases    []string
+		configured string
+		want       string
+	}{
+		{"no alias", nil, "", ""},
+		{"no alias, configured", nil, "a", ""},
+		{"configured alias kept", []string{"a", "b"}, "b", "b"},
+		{"configured alias missing", []string{"a", "b"}, "c", ""},
+		{"nothing configured", []string{"a", "b"}, "", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := selectGlobalAlias(tc.aliases, tc.configured); got != tc.want {
+				t.Errorf("selectGlobalAlias(%q, %q) = %q, want %q", tc.aliases, tc.configured, got, tc.want)
+			}
+		})
+	}
+}

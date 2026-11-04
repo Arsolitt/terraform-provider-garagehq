@@ -6,6 +6,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"net/http"
+	"slices"
 	"strconv"
 
 	garage "git.deuxfleurs.fr/garage-sdk/garage-admin-sdk-golang"
@@ -29,7 +30,7 @@ func resourceGarageBucket() *schema.Resource {
 			"global_alias": {
 				Type:        schema.TypeString,
 				Optional:    true,
-				Description: "Global alias for the bucket (this appears as the name in garage bucket list)",
+				Description: "Global alias for the bucket (this appears as the name in garage bucket list). A change adds the new alias, then removes the old alias. Garage does not remove the last alias of a bucket, so to remove the global alias, the bucket must have another global alias or a local alias.",
 			},
 			"bytes": {
 				Type:        schema.TypeInt,
@@ -105,11 +106,6 @@ func resourceGarageBucketCreate(ctx context.Context, d *schema.ResourceData, m i
 	if err := d.Set("objects", bucket.GetObjects()); err != nil {
 		return diag.FromErr(err)
 	}
-	if aliases := bucket.GetGlobalAliases(); len(aliases) > 0 {
-		if err := d.Set("global_alias", aliases[0]); err != nil {
-			return diag.FromErr(err)
-		}
-	}
 
 	// Set expiration policy if specified
 	if expirationDays, ok := d.GetOk("expiration_days"); ok && expirationDays.(int) > 0 {
@@ -158,10 +154,8 @@ func resourceGarageBucketRead(ctx context.Context, d *schema.ResourceData, m int
 	if err := d.Set("objects", bucket.GetObjects()); err != nil {
 		return diag.FromErr(err)
 	}
-	if aliases := bucket.GetGlobalAliases(); len(aliases) > 0 {
-		if err := d.Set("global_alias", aliases[0]); err != nil {
-			return diag.FromErr(err)
-		}
+	if err := d.Set("global_alias", selectGlobalAlias(bucket.GetGlobalAliases(), d.Get("global_alias").(string))); err != nil {
+		return diag.FromErr(err)
 	}
 
 	// Read expiration policy if it exists
@@ -201,6 +195,17 @@ func resourceGarageBucketRead(ctx context.Context, d *schema.ResourceData, m int
 func resourceGarageBucketUpdate(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
 	client := m.(*GarageClient)
 	bucketID := d.Id()
+
+	// Handle global alias changes
+	if d.HasChange("global_alias") {
+		oldAlias, newAlias := d.GetChange("global_alias")
+		if err := updateBucketGlobalAlias(ctx, client, bucketID, oldAlias.(string), newAlias.(string)); err != nil {
+			// Keep the prior state: without this, the SDK records the
+			// configured alias although Garage did not apply it.
+			d.Partial(true)
+			return diag.FromErr(fmt.Errorf("failed to update global alias: %w", err))
+		}
+	}
 
 	// Handle expiration policy changes
 	if d.HasChange("expiration_days") {
@@ -243,6 +248,76 @@ func resourceGarageBucketDelete(ctx context.Context, d *schema.ResourceData, m i
 
 	d.SetId("")
 	return nil
+}
+
+// selectGlobalAlias returns the global alias to record in state: configured
+// if the bucket has it, else "". The provider manages only the configured
+// alias, so other global aliases of the bucket have no effect on the state.
+func selectGlobalAlias(aliases []string, configured string) string {
+	if slices.Contains(aliases, configured) {
+		return configured
+	}
+	return ""
+}
+
+// updateBucketGlobalAlias replaces the global alias oldAlias of a bucket with
+// newAlias. An empty alias means no alias. The new alias is added before the
+// old alias is removed, because Garage refuses to remove the last alias of a
+// bucket.
+func updateBucketGlobalAlias(ctx context.Context, client *GarageClient, bucketID, oldAlias, newAlias string) error {
+	if newAlias != "" {
+		if err := addBucketGlobalAlias(ctx, client, bucketID, newAlias); err != nil {
+			return fmt.Errorf("failed to add global alias %q: %w", newAlias, err)
+		}
+	}
+
+	if oldAlias != "" {
+		status, err := removeBucketGlobalAlias(ctx, client, bucketID, oldAlias)
+		if err != nil {
+			if newAlias == "" && status == http.StatusBadRequest {
+				return fmt.Errorf("failed to remove global alias %q: %w: Garage does not remove the last alias of a bucket, so give the bucket another global alias or a local alias first, or delete the bucket", oldAlias, err)
+			}
+			return fmt.Errorf("failed to remove global alias %q: %w", oldAlias, err)
+		}
+	}
+
+	return nil
+}
+
+// addBucketGlobalAlias adds a global alias to a bucket. Garage accepts an
+// alias that the bucket already has.
+func addBucketGlobalAlias(ctx context.Context, client *GarageClient, bucketID, alias string) error {
+	aliasEnum := garage.BucketAliasEnumOneOfAsBucketAliasEnum(garage.NewBucketAliasEnumOneOf(bucketID, alias))
+
+	_, resp, err := client.Client.BucketAliasAPI.AddBucketAlias(client.WithAuth(ctx)).BucketAliasEnum(aliasEnum).Execute()
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	}()
+
+	return nil
+}
+
+// removeBucketGlobalAlias removes a global alias from a bucket. It also
+// returns the HTTP status code, or 0 if there is no response.
+func removeBucketGlobalAlias(ctx context.Context, client *GarageClient, bucketID, alias string) (int, error) {
+	aliasEnum := garage.BucketAliasEnumOneOfAsBucketAliasEnum(garage.NewBucketAliasEnumOneOf(bucketID, alias))
+
+	_, resp, err := client.Client.BucketAliasAPI.RemoveBucketAlias(client.WithAuth(ctx)).BucketAliasEnum(aliasEnum).Execute()
+	defer func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	}()
+	if resp == nil {
+		return 0, err
+	}
+
+	return resp.StatusCode, err
 }
 
 // buildWebsiteAccess converts the website_access schema block into an

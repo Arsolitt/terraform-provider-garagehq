@@ -82,7 +82,7 @@ terraform import garage_bucket.my_bucket abc123def456
 
 ### Optional
 
-- `global_alias` (String) - Global alias for the bucket. This appears as the bucket name in S3 API calls.
+- `global_alias` (String) - Global alias for the bucket. This appears as the bucket name in S3 API calls. A change adds the new alias, then removes the old alias. The provider manages only this alias. Other global aliases of the bucket stay and cause no diff. See [Global Alias](#global-alias).
 - `expiration_days` (Number) - Number of days after which objects will be automatically deleted. Set to 0 to disable expiration.
 - `website_access` (Block List, Max: 1) - Website hosting configuration for the bucket (see [below](#nested-schema-for-website_access)).
 
@@ -110,3 +110,9 @@ When `expiration_days` is set, the provider automatically configures an S3 lifec
 - Log rotation
 - Temporary file storage
 - Backup retention policies
+
+## Global Alias
+
+When `global_alias` changes, the provider adds the new alias to the bucket and then removes the old alias. The bucket ID and the objects do not change.
+
+Garage does not remove the last alias of a bucket. If you remove `global_alias` and the bucket has no other alias, the apply fails and the bucket keeps its global alias. To remove the global alias, first give the bucket another global alias or a local alias (an alias in the namespace of an access key), or delete the bucket.
