@@ -331,62 +331,49 @@ func layoutRoleEqual(cur layoutNodeRole, change nodeRoleChange) bool {
 func resourceGarageClusterLayoutRead(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
 	client := m.(*GarageClient)
 
-	layout, resp, err := client.Client.ClusterLayoutAPI.GetClusterLayout(client.WithAuth(ctx)).Execute()
+	layout, err := getClusterLayoutRaw(ctx, client)
 	if err != nil {
 		return diag.FromErr(fmt.Errorf("failed to get cluster layout: %w", err))
 	}
-	defer func() {
-		if resp.Body != nil {
-			_ = resp.Body.Close()
-		}
-	}()
 
-	if err := d.Set("version", layout.GetVersion()); err != nil {
+	if err := d.Set("version", layout.Version); err != nil {
 		return diag.FromErr(err)
 	}
 
-	// Read current roles from the layout
-	existingRoles := d.Get("roles").([]interface{})
-	currentRoles := make([]map[string]interface{}, 0)
-
-	for _, role := range existingRoles {
-		r := role.(map[string]interface{})
-		nodeID := r["id"].(string)
-
-		// Check if node still exists in layout
-		for _, node := range layout.GetRoles() {
-			if node.GetId() == nodeID {
-				currentRole := map[string]interface{}{
-					"id":   node.GetId(),
-					"zone": node.GetZone(),
-				}
-				if capacity, ok := node.GetCapacityOk(); ok {
-					// Try to preserve the user's original input format
-					originalInput, hasOriginal := r["capacity"].(string)
-					if hasOriginal && originalInput != "" {
-						parsedOriginal, err := ParseCapacity(originalInput)
-						if err == nil && parsedOriginal == *capacity {
-							currentRole["capacity"] = originalInput
-						} else {
-							currentRole["capacity"] = FormatCapacity(*capacity)
-						}
-					} else {
-						currentRole["capacity"] = FormatCapacity(*capacity)
-					}
-				}
-				if tags := node.GetTags(); len(tags) > 0 {
-					currentRole["tags"] = tags
-				}
-				currentRoles = append(currentRoles, currentRole)
-				break
-			}
-		}
+	current := make(map[string]layoutNodeRole, len(layout.Roles))
+	for _, node := range layout.Roles {
+		current[node.Id] = node
 	}
 
-	if len(currentRoles) > 0 {
-		if err := d.Set("roles", currentRoles); err != nil {
-			return diag.FromErr(err)
+	// Read the roles of the nodes in the state. A node that is not in the
+	// layout is not in the result, thus Terraform shows it as drift.
+	currentRoles := make([]map[string]interface{}, 0)
+	for _, role := range d.Get("roles").([]interface{}) {
+		r := role.(map[string]interface{})
+		node, ok := current[r["id"].(string)]
+		if !ok {
+			continue
 		}
+		currentRole := map[string]interface{}{
+			"id":   node.Id,
+			"zone": node.Zone,
+		}
+		if node.Capacity != nil {
+			// Keep the notation of the configuration when the value is the same.
+			if c, err := ParseCapacity(r["capacity"].(string)); err == nil && c == *node.Capacity {
+				currentRole["capacity"] = r["capacity"]
+			} else {
+				currentRole["capacity"] = formatCapacityExact(*node.Capacity)
+			}
+		}
+		if len(node.Tags) > 0 {
+			currentRole["tags"] = node.Tags
+		}
+		currentRoles = append(currentRoles, currentRole)
+	}
+
+	if err := d.Set("roles", currentRoles); err != nil {
+		return diag.FromErr(err)
 	}
 
 	return nil

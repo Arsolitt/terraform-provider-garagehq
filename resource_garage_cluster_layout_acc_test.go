@@ -329,6 +329,44 @@ func TestAccGarageClusterLayout_stagedChanges(t *testing.T) {
 	})
 }
 
+func TestAccGarageClusterLayout_nodeLeavesLayout(t *testing.T) {
+	self := testAccLayoutPreCheck(t)
+	client := testAccClient(t)
+	config := testAccClusterLayoutConfig(testAccClusterLayoutRole(testAccFakeNodeID, "acc-zone", ""))
+	fake := testAccLayoutRole{id: testAccFakeNodeID, zone: "acc-zone"}
+
+	resource.Test(t, resource.TestCase{
+		ProtoV5ProviderFactories: testAccProtoV5ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				// The resource manages only the gateway, and keeps the
+				// role of self.
+				Config: config,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckLayoutRole(client, fake),
+					testAccCheckLayoutRole(client, self),
+					resource.TestCheckResourceAttr("garage_cluster_layout.test", "roles.#", "1"),
+					resource.TestCheckResourceAttr("garage_cluster_layout.test", "roles.0.capacity", ""),
+				),
+			},
+			{
+				// The gateway leaves the layout outside Terraform.
+				PreConfig: func() {
+					remove := true
+					testAccApplyLayout(t, client, nodeRoleChange{Id: testAccFakeNodeID, Remove: &remove})
+				},
+				Config:             config,
+				PlanOnly:           true,
+				ExpectNonEmptyPlan: true,
+			},
+			{
+				Config: config,
+				Check:  testAccCheckLayoutRole(client, fake),
+			},
+		},
+	})
+}
+
 // TestAccGarageClusterLayout_applyFails tries to remove the storage role of
 // the only storage node. Garage refuses to apply such a layout. Because a
 // mistake in the provider could remove the role, the test runs only when

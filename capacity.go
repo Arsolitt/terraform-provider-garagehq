@@ -80,3 +80,13 @@ func FormatCapacity(b int64) string {
 
 	return fmt.Sprintf("%d", b)
 }
+
+// formatCapacityExact formats b as FormatCapacity does when ParseCapacity
+// gives b back from the result, and as a plain number of bytes otherwise.
+func formatCapacityExact(b int64) string {
+	s := FormatCapacity(b)
+	if c, err := ParseCapacity(s); err == nil && c == b {
+		return s
+	}
+	return strconv.FormatInt(b, 10)
+}
