@@ -14,10 +14,14 @@ Manages the cluster layout in Garage, including node roles, zones, capacity, and
 
 ### Single Node (Development)
 
+Use the [`garage_node`](../data-sources/node.md) data source to get the ID of the node that serves the admin API:
+
 ```hcl
+data "garage_node" "self" {}
+
 resource "garage_cluster_layout" "dev" {
   roles {
-    id       = "node-dev-1"
+    id       = data.garage_node.self.id
     zone     = "local"
     capacity = "1G"
     tags     = ["dev", "storage"]
@@ -182,7 +186,7 @@ resource "garage_cluster_layout" "example" {
 
 4. **Destroy**: `terraform destroy` removes the resource only from the state. The roles of the nodes stay in the layout, and the provider does not revert staged changes. To remove a node from the layout, remove it from `roles` and apply.
 
-5. **Node IDs**: The node ID must match the ID configured in the Garage node's configuration file.
+5. **Node IDs**: The node ID is the public key of the node, which Garage makes on the first start. Get it with the [`garage_node`](../data-sources/node.md) data source, or with `garage node id`.
 
 6. **Gateway Nodes**: Nodes without a `capacity` attribute operate as gateways, routing requests but not storing data.
 
