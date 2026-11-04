@@ -62,7 +62,7 @@ provider "garage" {
 | Resource | Description |
 |----------|-------------|
 | [`garage_key`](resources/key.md) | Manage access keys for S3 API authentication |
-| [`garage_bucket`](resources/bucket.md) | Create and manage buckets with lifecycle policies |
+| [`garage_bucket`](resources/bucket.md) | Create and manage buckets with lifecycle policies and quotas |
 | [`garage_bucket_key`](resources/bucket_key.md) | Manage permissions between keys and buckets |
 | [`garage_admin_token`](resources/admin_token.md) | Create admin API tokens with restricted scopes |
 | [`garage_cluster_layout`](resources/cluster_layout.md) | Manage cluster node layout and capacity |

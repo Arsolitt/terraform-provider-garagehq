@@ -6,7 +6,7 @@ description: |-
 
 # garage_bucket
 
-Manages a bucket in Garage. Buckets are containers for objects and can have lifecycle policies for automatic expiration.
+Manages a bucket in Garage. Buckets are containers for objects and can have lifecycle policies for automatic expiration and quotas.
 
 ## Example Usage
 
@@ -33,6 +33,16 @@ resource "garage_bucket" "logs" {
 resource "garage_bucket" "uploads" {
   global_alias    = "user-uploads"
   expiration_days = 7  # Delete uploaded files after 7 days
+}
+```
+
+### Bucket with Quotas
+
+```hcl
+resource "garage_bucket" "tenant" {
+  global_alias = "tenant-data"
+  max_size     = 10737418240 # 10 GiB
+  max_objects  = 100000
 }
 ```
 
@@ -83,6 +93,8 @@ terraform import garage_bucket.my_bucket abc123def456
 ### Optional
 
 - `global_alias` (String) - Global alias for the bucket. This appears as the bucket name in S3 API calls. A change adds the new alias, then removes the old alias. The provider manages only this alias. Other global aliases of the bucket stay and cause no diff. See [Global Alias](#global-alias).
+- `max_size` (Number) - Maximum total size in bytes of the objects in this bucket. Unset or `0` means no quota. See [Quotas](#quotas) for the limit on 32-bit builds.
+- `max_objects` (Number) - Maximum number of objects in this bucket. Unset or `0` means no quota. See [Quotas](#quotas) for the limit on 32-bit builds.
 - `expiration_days` (Number) - Number of days after which objects will be automatically deleted. Set to 0 to disable expiration.
 - `website_access` (Block List, Max: 1) - Website hosting configuration for the bucket (see [below](#nested-schema-for-website_access)).
 
@@ -116,3 +128,11 @@ When `expiration_days` is set, the provider automatically configures an S3 lifec
 When `global_alias` changes, the provider adds the new alias to the bucket and then removes the old alias. The bucket ID and the objects do not change.
 
 Garage does not remove the last alias of a bucket. If you remove `global_alias` and the bucket has no other alias, the apply fails and the bucket keeps its global alias. To remove the global alias, first give the bucket another global alias, or a local alias in the namespace of an access key via `garage bucket alias <bucket> <name> --local <access-key-id>` (Garage CLI) or the `AddBucketAlias` admin API call, or delete the bucket.
+
+## Quotas
+
+Garage enforces `max_size` and `max_objects` on upload. If you remove a quota attribute or set it to `0`, the provider removes the quota from the bucket.
+
+The provider sends both quotas in each update. A change to one attribute does not change the other attribute. If a quota is set in Garage and is not in your configuration, the plan shows its removal and the apply removes it.
+
+On 32-bit builds of the provider, such as `linux_arm`, the limit of each attribute is 2147483647. For `max_size`, this is just under 2 GiB. A higher value in the configuration causes an error before the apply. If a bucket has a higher quota in Garage, the provider reads an incorrect value. Use a 64-bit build for higher quotas.
