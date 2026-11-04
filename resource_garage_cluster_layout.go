@@ -32,11 +32,33 @@ func validateCapacity(v interface{}, k string) (ws []string, errors []error) {
 // nodeRoleChange is a custom type to work around Garage v2.2 oneOf validation issue.
 // The server validates oneOf schemas in order and expects "remove" field in the first schema.
 type nodeRoleChange struct {
-	Id       string   `json:"id"`
-	Zone     string   `json:"zone,omitempty"`
-	Tags     []string `json:"tags,omitempty"`
-	Capacity *int64   `json:"capacity,omitempty"`
-	Remove   *bool    `json:"remove,omitempty"`
+	Id       string
+	Zone     string
+	Tags     []string
+	Capacity *int64
+	Remove   *bool
+}
+
+// MarshalJSON encodes a removal as `id` and `remove` only. It encodes all
+// other changes with `zone` and `tags`, also when `tags` is empty, because
+// Garage refuses a role without `tags`. It omits `capacity` for a gateway.
+func (c nodeRoleChange) MarshalJSON() ([]byte, error) {
+	if c.Remove != nil {
+		return json.Marshal(struct {
+			Id     string `json:"id"`
+			Remove bool   `json:"remove"`
+		}{c.Id, *c.Remove})
+	}
+	tags := c.Tags
+	if tags == nil {
+		tags = []string{}
+	}
+	return json.Marshal(struct {
+		Id       string   `json:"id"`
+		Zone     string   `json:"zone"`
+		Tags     []string `json:"tags"`
+		Capacity *int64   `json:"capacity,omitempty"`
+	}{c.Id, c.Zone, tags, c.Capacity})
 }
 
 // layoutNodeRole represents a node role in the cluster layout response.
