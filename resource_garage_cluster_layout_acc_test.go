@@ -382,6 +382,32 @@ func TestAccGarageClusterLayout_removeNode(t *testing.T) {
 	})
 }
 
+func TestAccGarageClusterLayout_import(t *testing.T) {
+	self := testAccLayoutPreCheck(t)
+	config := testAccClusterLayoutConfig(testAccClusterLayoutRole(self.id, self.zone, formatCapacityExact(*self.capacity), self.tags...))
+
+	resource.Test(t, resource.TestCase{
+		ProtoV5ProviderFactories: testAccProtoV5ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: config,
+			},
+			{
+				ResourceName:      "garage_cluster_layout.test",
+				ImportState:       true,
+				ImportStateId:     "cluster-layout",
+				ImportStateVerify: true,
+			},
+			{
+				ResourceName:  "garage_cluster_layout.test",
+				ImportState:   true,
+				ImportStateId: "layout",
+				ExpectError:   regexp.MustCompile(`unexpected import ID`),
+			},
+		},
+	})
+}
+
 func TestAccGarageClusterLayout_nodeLeavesLayout(t *testing.T) {
 	self := testAccLayoutPreCheck(t)
 	client := testAccClient(t)

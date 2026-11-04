@@ -183,6 +183,9 @@ func resourceGarageClusterLayout() *schema.Resource {
 		ReadContext:   resourceGarageClusterLayoutRead,
 		UpdateContext: resourceGarageClusterLayoutUpdate,
 		DeleteContext: resourceGarageClusterLayoutDelete,
+		Importer: &schema.ResourceImporter{
+			StateContext: resourceGarageClusterLayoutImport,
+		},
 		Schema: map[string]*schema.Schema{
 			"roles": {
 				Type:        schema.TypeList,
@@ -363,22 +366,7 @@ func resourceGarageClusterLayoutRead(ctx context.Context, d *schema.ResourceData
 		if !ok {
 			continue
 		}
-		currentRole := map[string]interface{}{
-			"id":   node.Id,
-			"zone": node.Zone,
-		}
-		if node.Capacity != nil {
-			// Keep the notation of the configuration when the value is the same.
-			if c, err := ParseCapacity(r["capacity"].(string)); err == nil && c == *node.Capacity {
-				currentRole["capacity"] = r["capacity"]
-			} else {
-				currentRole["capacity"] = formatCapacityExact(*node.Capacity)
-			}
-		}
-		if len(node.Tags) > 0 {
-			currentRole["tags"] = node.Tags
-		}
-		currentRoles = append(currentRoles, currentRole)
+		currentRoles = append(currentRoles, layoutRoleState(node, r["capacity"].(string)))
 	}
 
 	if err := d.Set("roles", currentRoles); err != nil {
@@ -386,6 +374,50 @@ func resourceGarageClusterLayoutRead(ctx context.Context, d *schema.ResourceData
 	}
 
 	return nil
+}
+
+// layoutRoleState returns the state of the role of a node in the layout.
+// When the capacity in the layout is equal to configured, the state keeps
+// the notation of configured.
+func layoutRoleState(node layoutNodeRole, configured string) map[string]interface{} {
+	role := map[string]interface{}{
+		"id":   node.Id,
+		"zone": node.Zone,
+	}
+	if node.Capacity != nil {
+		if c, err := ParseCapacity(configured); err == nil && c == *node.Capacity {
+			role["capacity"] = configured
+		} else {
+			role["capacity"] = formatCapacityExact(*node.Capacity)
+		}
+	}
+	if len(node.Tags) > 0 {
+		role["tags"] = node.Tags
+	}
+	return role
+}
+
+// resourceGarageClusterLayoutImport imports all roles of the current
+// layout. Read then reads only the roles in the state.
+func resourceGarageClusterLayoutImport(ctx context.Context, d *schema.ResourceData, m interface{}) ([]*schema.ResourceData, error) {
+	if d.Id() != "cluster-layout" {
+		return nil, fmt.Errorf("unexpected import ID %q, the cluster layout is imported as \"cluster-layout\"", d.Id())
+	}
+	client := m.(*GarageClient)
+
+	layout, err := getClusterLayoutRaw(ctx, client)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get cluster layout: %w", err)
+	}
+	roles := make([]map[string]interface{}, 0, len(layout.Roles))
+	for _, node := range layout.Roles {
+		roles = append(roles, layoutRoleState(node, ""))
+	}
+	if err := d.Set("roles", roles); err != nil {
+		return nil, err
+	}
+
+	return []*schema.ResourceData{d}, nil
 }
 
 func resourceGarageClusterLayoutUpdate(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
