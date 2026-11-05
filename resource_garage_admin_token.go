@@ -134,10 +134,13 @@ func resourceGarageAdminTokenCreate(ctx context.Context, d *schema.ResourceData,
 			return diag.FromErr(err)
 		}
 	}
-	if token.HasExpiration() {
-		if err := d.Set("expiration", token.GetExpiration().Format(time.RFC3339)); err != nil {
-			return diag.FromErr(err)
-		}
+	// Garage returns a null expiration for a token that never expires.
+	expiration := ""
+	if t, ok := token.GetExpirationOk(); ok && t != nil {
+		expiration = t.Format(time.RFC3339)
+	}
+	if err := d.Set("expiration", expiration); err != nil {
+		return diag.FromErr(err)
 	}
 
 	return nil
@@ -180,10 +183,13 @@ func resourceGarageAdminTokenRead(ctx context.Context, d *schema.ResourceData, m
 			return diag.FromErr(err)
 		}
 	}
-	if token.HasExpiration() {
-		if err := d.Set("expiration", token.GetExpiration().Format(time.RFC3339)); err != nil {
-			return diag.FromErr(err)
-		}
+	// Garage returns a null expiration for a token that never expires.
+	expiration := ""
+	if t, ok := token.GetExpirationOk(); ok && t != nil {
+		expiration = t.Format(time.RFC3339)
+	}
+	if err := d.Set("expiration", expiration); err != nil {
+		return diag.FromErr(err)
 	}
 
 	return nil
