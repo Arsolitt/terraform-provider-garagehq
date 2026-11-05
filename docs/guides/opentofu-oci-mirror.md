@@ -42,6 +42,11 @@ terraform {
 The `include` address must match the source address written in HCL. If you write
 the host explicitly, use the same host in `include`.
 
+Because this is a custom installation method, `tofu init` calculates the
+lock-file hashes locally and warns that the lock file is incomplete. Add the
+checksums for the platforms your team uses with, for example,
+`tofu providers lock -platform=linux_amd64 -platform=darwin_arm64`.
+
 ## Requirements and limitations
 
 - OpenTofu >= 1.10 for `oci_mirror`.
