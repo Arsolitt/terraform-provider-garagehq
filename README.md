@@ -291,9 +291,12 @@ This installs the provider to your local Terraform plugin directory.
 ```bash
 make build     # Build the provider
 make test      # Run tests with coverage
+make testacc   # Run acceptance tests against a live Garage
 make lint      # Format and lint code
 make clean     # Clean build artifacts
 ```
+
+The acceptance tests need a live single-node Garage v2. `scripts/acc-garage.sh` starts one with Docker (or the binary in `GARAGE_BIN`) and gives the node a role in the cluster layout. `scripts/acc-garage.sh stop` removes it.
 
 ## Documentation
 
