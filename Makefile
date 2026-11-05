@@ -1,7 +1,7 @@
 .PHONY: help build install test testacc lint fmt lint-only clean release-dry-run
 
 # Docker image versions
-GOLANGCI_LINT_VERSION := v2.10.1
+GOLANGCI_LINT_VERSION := v2.14.0
 
 # Provider version - use git tag or fallback to "dev"
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null | sed 's/^v//' || echo "dev")
