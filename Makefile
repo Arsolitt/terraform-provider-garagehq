@@ -34,7 +34,7 @@ install: build
 	@echo "Installed to $(PROVIDER_REGISTRY)"
 
 test:
-	go test -v -race -coverprofile=coverage.txt -covermode=atomic ./... || true
+	go test -v -race -coverprofile=coverage.txt -covermode=atomic ./...
 
 # Acceptance tests need a live Garage: start one with scripts/acc-garage.sh
 testacc:

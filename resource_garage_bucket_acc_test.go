@@ -63,7 +63,11 @@ func testAccCheckGarageBucketDestroy(t *testing.T) resource.TestCheckFunc {
 			if resp != nil && resp.Body != nil {
 				_ = resp.Body.Close()
 			}
-			if err == nil {
+			gone, probeErr := classifyDeletionProbe(resp, err)
+			if probeErr != nil {
+				return fmt.Errorf("bucket %s: %w", rs.Primary.ID, probeErr)
+			}
+			if !gone {
 				return fmt.Errorf("bucket %s still exists", rs.Primary.ID)
 			}
 		}

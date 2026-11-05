@@ -22,6 +22,21 @@ if [ "${1:-}" = stop ]; then
 	exit 0
 fi
 
+if [ -n "${GARAGE_BIN:-}" ]; then
+	if [ -f "$GARAGE_DIR/pid" ]; then
+		pid="$(cat "$GARAGE_DIR/pid")"
+		if kill -0 "$pid" 2>/dev/null; then
+			echo "error: Garage is already running with pid $pid (pid file $GARAGE_DIR/pid); run 'scripts/acc-garage.sh stop' first" >&2
+			exit 1
+		fi
+	fi
+else
+	if docker inspect "$CONTAINER" >/dev/null 2>&1; then
+		echo "error: container $CONTAINER already exists; run 'scripts/acc-garage.sh stop' first" >&2
+		exit 1
+	fi
+fi
+
 mkdir -p "$GARAGE_DIR/meta" "$GARAGE_DIR/data"
 if [ -n "${GARAGE_BIN:-}" ]; then
 	root="$GARAGE_DIR"
@@ -33,21 +48,21 @@ metadata_dir = "$root/meta"
 data_dir = "$root/data"
 db_engine = "sqlite"
 replication_factor = 1
-rpc_bind_addr = "[::]:3901"
+rpc_bind_addr = "127.0.0.1:3901"
 rpc_public_addr = "127.0.0.1:3901"
 rpc_secret = "$(openssl rand -hex 32)"
 
 [s3_api]
 s3_region = "garage"
-api_bind_addr = "[::]:3900"
+api_bind_addr = "127.0.0.1:3900"
 root_domain = ".s3.garage.localhost"
 
 [s3_web]
-bind_addr = "[::]:3902"
+bind_addr = "127.0.0.1:3902"
 root_domain = ".web.garage.localhost"
 
 [admin]
-api_bind_addr = "[::]:3903"
+api_bind_addr = "127.0.0.1:3903"
 admin_token = "$GARAGE_TOKEN"
 TOML
 
@@ -63,12 +78,22 @@ else
 	garage() { docker exec "$CONTAINER" /garage "$@"; }
 fi
 
+ready=false
 for _ in $(seq 60); do
 	if garage status >/dev/null 2>&1; then
+		ready=true
 		break
 	fi
 	sleep 1
 done
+
+if [ "$ready" != true ]; then
+	if [ -z "${GARAGE_BIN:-}" ]; then
+		docker logs "$CONTAINER" >"$GARAGE_DIR/log" 2>&1 || true
+	fi
+	echo "error: Garage did not become ready after 60 attempts; see $GARAGE_DIR/log" >&2
+	exit 1
+fi
 
 node_id="$(garage node id -q | cut -d@ -f1)"
 garage layout assign -z dc1 -c 1G "$node_id" >/dev/null
