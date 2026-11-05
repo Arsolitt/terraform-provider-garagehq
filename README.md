@@ -9,7 +9,7 @@ A Terraform provider for [Garage](https://garagehq.deuxfleurs.fr/) object storag
 
 - **Garage v2.x** - This provider uses Garage Admin API v2
 - [Terraform](https://www.terraform.io/downloads.html) >= 1.0
-- [Go](https://golang.org/doc/install) >= 1.24 (to build from source)
+- [Go](https://golang.org/doc/install) >= 1.26 (to build from source)
 
 ## Resources
 
