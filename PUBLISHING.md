@@ -52,6 +52,7 @@ The release process is automated via GitHub Actions:
    - Creates SHA256 checksums
    - Signs the checksums with GPG
    - Uploads everything to the GitHub release
+   - Publishes the platform zips to GHCR as an OpenTofu OCI mirror
 
 ## Step 5: Publish to Terraform Registry
 
@@ -64,6 +65,24 @@ Once a release is created on GitHub:
 5. Follow the prompts to publish
 
 The registry will automatically detect new releases and make them available.
+
+## OpenTofu OCI Mirror
+
+The release workflow's `oci` job republishes the same platform zips to
+`ghcr.io/arsolitt/terraform-provider-garagehq`, tagged with the release version
+without its leading `v`. OpenTofu's `oci_mirror` installation method reads that
+layout; consumers configure it as described in the
+[OCI mirror guide](docs/guides/opentofu-oci-mirror.md).
+
+The job runs after GoReleaser in the tag-driven release. To backfill an existing
+release:
+
+```bash
+gh workflow run oci-release.yml -f tag=v1.2.1
+```
+
+The OCI artifact is verified by digest, not by the GPG signature on the GitHub
+release checksums.
 
 ## Verification
 

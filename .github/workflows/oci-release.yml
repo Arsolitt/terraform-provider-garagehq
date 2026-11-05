@@ -1,0 +1,165 @@
+# Publishes the release's platform packages to GHCR in the layout OpenTofu's
+# oci_mirror installation method reads.
+#
+# release.yml calls this workflow after GoReleaser has uploaded the release
+# assets. It is also dispatchable by tag to backfill an existing release:
+#
+#   gh workflow run oci-release.yml -f tag=v1.2.1
+#
+# The OCI tag is the release version without its leading v; + becomes _.
+# The index is application/vnd.opentofu.provider and every platform manifest is
+# application/vnd.opentofu.provider-target with the release zip as its only
+# layer, which is the contract OpenTofu >= 1.10 installs from:
+#
+#   provider_installation {
+#     oci_mirror {
+#       repository_template = "ghcr.io/arsolitt/terraform-provider-garagehq"
+#       include             = ["registry.opentofu.org/arsolitt/garagehq"]
+#     }
+#     direct {
+#       exclude             = ["registry.opentofu.org/arsolitt/garagehq"]
+#     }
+#   }
+#
+# GHCR requires OpenTofu >= 1.13: 1.10 through 1.12 ping GET /v2/, whose 401
+# challenge carries a placeholder scope that the anonymous token request cannot
+# use, so init fails with "failed to contact OCI registry". 1.13 removed that
+# ping. oci_credentials is needed only when the package is private.
+name: OCI Mirror
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: Release tag to publish (e.g. v1.2.1)
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to publish (e.g. v1.2.1)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: oci-${{ inputs.tag }}
+  cancel-in-progress: false
+
+env:
+  OCI_REPOSITORY: ghcr.io/arsolitt/terraform-provider-garagehq
+  ORAS_VERSION: 1.3.4
+
+jobs:
+  oci:
+    name: Publish OCI mirror
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Install ORAS
+        env:
+          # Pinned to the bytes as well as the version: this downloads and runs
+          # a binary, so the tag alone would let a replaced asset through.
+          ORAS_LINUX_AMD64_SHA256: f27adb935022d94df8dc77719c322dda592c78a0d57a6f7dcdd8d900b248c454
+        run: |
+          mkdir -p "$HOME/.local/bin"
+          curl -fsSLo /tmp/oras.tar.gz \
+            "https://github.com/oras-project/oras/releases/download/v${ORAS_VERSION}/oras_${ORAS_VERSION}_linux_amd64.tar.gz"
+          echo "${ORAS_LINUX_AMD64_SHA256}  /tmp/oras.tar.gz" | sha256sum -c -
+          tar -xzf /tmp/oras.tar.gz -C "$HOME/.local/bin" oras
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          "$HOME/.local/bin/oras" version
+
+      - name: Download the release's platform packages
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          mkdir -p packages
+          gh release download "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern 'terraform-provider-garagehq_*.zip' \
+            --dir packages
+          ls -1 packages
+
+      - name: Log in to GHCR
+        env:
+          GHCR_TOKEN: ${{ github.token }}
+        run: |
+          printf '%s' "$GHCR_TOKEN" | oras login ghcr.io \
+            --username "${{ github.actor }}" --password-stdin
+
+      - name: Assemble the layout and push it
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          version="${TAG#v}"
+          version="${version//+/_}"
+          prefix="terraform-provider-garagehq_${version}_"
+          shopt -s nullglob
+          zips=(packages/*.zip)
+          if (( ${#zips[@]} == 0 )); then
+            echo "the release carries no platform packages to publish" >&2
+            exit 1
+          fi
+
+          # --artifact-platform takes the os/arch the package was built for, and
+          # both it and the os_arch tag exist only in the asset name, so a name
+          # that does not parse is fatal: publishing a package with the wrong
+          # platform silently makes it useless to that platform's consumers.
+          platforms=()
+          for zip in "${zips[@]}"; do
+            name="$(basename "${zip}")"
+            if [[ "${name}" != "${prefix}"*.zip ]]; then
+              echo "release asset does not match ${prefix}<os>_<arch>.zip: ${name}" >&2
+              exit 1
+            fi
+            platform="${name#"${prefix}"}"
+            platform="${platform%.zip}"
+            if [[ ! "${platform}" =~ ^[a-z0-9]+_[a-z0-9]+$ ]]; then
+              echo "cannot derive os_arch from release asset: ${name}" >&2
+              exit 1
+            fi
+            oras push \
+              --artifact-type application/vnd.opentofu.provider-target \
+              --artifact-platform "${platform%_*}/${platform#*_}" \
+              --oci-layout "tmp-layout:${platform}" \
+              "${zip}:archive/zip"
+            platforms+=("${platform}")
+          done
+
+          oras manifest index create \
+            --artifact-type=application/vnd.opentofu.provider \
+            --oci-layout "tmp-layout:${version}" \
+            "${platforms[@]}"
+
+          oras cp \
+            --from-oci-layout "tmp-layout:${version}" \
+            "${OCI_REPOSITORY}:${version}"
+
+      - name: Verify the published index
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          version="${TAG#v}"
+          version="${version//+/_}"
+          expected="$(find packages -maxdepth 1 -name '*.zip' | wc -l)"
+          for _ in $(seq 1 10); do
+            if oras manifest fetch "${OCI_REPOSITORY}:${version}" > /tmp/published-index.json 2>/dev/null; then
+              if jq -e --argjson expected "${expected}" \
+                '.artifactType == "application/vnd.opentofu.provider" and (.manifests | length) == $expected' \
+                /tmp/published-index.json; then
+                exit 0
+              fi
+            fi
+            sleep 2
+          done
+          echo "the published OCI index did not verify" >&2
+          exit 1

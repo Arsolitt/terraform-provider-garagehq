@@ -9,6 +9,7 @@
 #   2. Creates SHA256 checksums
 #   3. Signs checksums with GPG
 #   4. Uploads release artifacts to GitHub
+#   5. Publishes the platform packages to GHCR for OpenTofu's oci_mirror
 
 name: Release
 
@@ -87,3 +88,13 @@ jobs:
           gh release view "$TAG" --repo "${{ github.repository }}" --json assets,tagName,name
 
           echo "Release verification complete"
+
+  oci:
+    name: Publish OCI mirror
+    needs: goreleaser
+    uses: ./.github/workflows/oci-release.yml
+    with:
+      tag: ${{ github.event.inputs.tag || github.ref_name }}
+    permissions:
+      contents: read
+      packages: write
