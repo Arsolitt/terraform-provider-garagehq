@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 	"strings"
 	"testing"
@@ -170,12 +171,11 @@ func testAccCheckGarageBucketKeyDestroy(t *testing.T) resource.TestCheckFunc {
 			if resp != nil && resp.Body != nil {
 				_ = resp.Body.Close()
 			}
-			gone, probeErr := classifyDeletionProbe(resp, err)
-			if probeErr != nil {
-				return fmt.Errorf("bucket key %s: %w", rs.Primary.ID, probeErr)
-			}
-			if gone {
-				continue
+			if err != nil {
+				if resp != nil && resp.StatusCode == http.StatusNotFound {
+					return fmt.Errorf("bucket key %s: fixture key %s is unexpectedly missing", rs.Primary.ID, keyID)
+				}
+				return fmt.Errorf("bucket key %s: failed to read fixture key %s: %w", rs.Primary.ID, keyID, err)
 			}
 			for _, bucket := range key.GetBuckets() {
 				if bucket.GetId() != bucketID {
