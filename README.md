@@ -9,7 +9,7 @@ A Terraform provider for [Garage](https://garagehq.deuxfleurs.fr/) object storag
 
 - **Garage v2.x** - This provider uses Garage Admin API v2
 - [Terraform](https://www.terraform.io/downloads.html) >= 1.0
-- [Go](https://golang.org/doc/install) >= 1.26 (to build from source)
+- [Go](https://golang.org/doc/install) >= 1.26.10 (to build from source)
 
 ## Resources
 
@@ -297,6 +297,14 @@ make clean     # Clean build artifacts
 ```
 
 The acceptance tests need a live single-node Garage v2. `scripts/acc-garage.sh` starts one with Docker (or the binary in `GARAGE_BIN`) and gives the node a role in the cluster layout. `scripts/acc-garage.sh stop` removes it.
+
+`make testacc` needs a Terraform-compatible CLI, since the test harness drives the provider through one. The harness uses `TF_ACC_TERRAFORM_PATH` when set, otherwise it looks for `terraform` in `PATH` and attempts to install it if missing. To run the suite with OpenTofu, point the harness at the `tofu` binary and at the OpenTofu registry:
+
+```bash
+export TF_ACC_TERRAFORM_PATH="$(command -v tofu)"
+export TF_ACC_PROVIDER_HOST=registry.opentofu.org
+make testacc
+```
 
 ## Documentation
 

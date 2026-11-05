@@ -24,25 +24,29 @@ on:
         type: string
 
 permissions:
-  contents: write
-  id-token: write
-  packages: write
+  contents: read
+
+env:
+  GORELEASER_VERSION: v2.18.1
 
 jobs:
   goreleaser:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
           ref: ${{ github.event.inputs.tag || github.ref }}
 
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
-          cache: false
+          cache: true
 
       - name: Import GPG key
         id: import_gpg
@@ -52,14 +56,17 @@ jobs:
           passphrase: ${{ secrets.GPG_PASSPHRASE }}
 
       - name: Run GoReleaser
-        uses: goreleaser/goreleaser-action@v6
+        uses: goreleaser/goreleaser-action@v7
         with:
-          version: latest
+          version: ${{ env.GORELEASER_VERSION }}
           args: release --clean
         env:
           GPG_FINGERPRINT: ${{ steps.import_gpg.outputs.fingerprint }}
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # workflow_dispatch releases the requested tag; a tag push releases
+          # the ref that triggered the run.
+          GORELEASER_CURRENT_TAG: ${{ github.event.inputs.tag || github.ref_name }}
 
   verify:
     runs-on: ubuntu-latest

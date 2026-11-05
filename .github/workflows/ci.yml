@@ -9,21 +9,33 @@ on:
       - 'docs/**'
       - '*.md'
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GOLANGCI_LINT_VERSION: v2.14.0
+
 jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
+          cache: true
 
       - name: Download dependencies
         run: go mod download
@@ -32,7 +44,7 @@ jobs:
         run: go test -v -race -coverprofile=coverage.txt -covermode=atomic ./...
 
       - name: Upload coverage
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v7
         with:
           files: ./coverage.txt
           flags: unittests
@@ -41,29 +53,28 @@ jobs:
   acceptance:
     name: Acceptance Test
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
+          cache: true
 
       - name: Set up Terraform
         uses: hashicorp/setup-terraform@v3
         with:
+          terraform_version: 1.17.1
           terraform_wrapper: false
 
       - name: Start Garage
         env:
-          GARAGE_VERSION: v2.3.0
-        run: |
-          curl -fsSL -o "$RUNNER_TEMP/garage" "https://garagehq.deuxfleurs.fr/_releases/$GARAGE_VERSION/x86_64-unknown-linux-musl/garage"
-          chmod +x "$RUNNER_TEMP/garage"
-          echo "GARAGE_BIN=$RUNNER_TEMP/garage" >> "$GITHUB_ENV"
-          GARAGE_BIN="$RUNNER_TEMP/garage" scripts/acc-garage.sh
+          GARAGE_IMAGE: dxflrs/garage:v2.3.0@sha256:866bd13ed2038ba7e7190e840482bc27234c4afaf77be8cfa439ae088c1e4690
+        run: scripts/acc-garage.sh
 
       - name: Run acceptance tests
         run: make testacc
@@ -71,40 +82,45 @@ jobs:
   lint:
     name: Lint
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
+          cache: true
 
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:
-          version: latest
+          version: ${{ env.GOLANGCI_LINT_VERSION }}
+          args: --timeout=5m
 
   build:
     name: Build
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: [test, acceptance, lint]
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
+          cache: true
 
       - name: Build provider
         run: go build -v -o terraform-provider-garage .
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: provider
           path: terraform-provider-garage
@@ -113,13 +129,14 @@ jobs:
   security:
     name: Security Scan
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
       security-events: write
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@v0.36.0
