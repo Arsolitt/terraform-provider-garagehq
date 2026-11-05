@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.1](https://github.com/Arsolitt/terraform-provider-garagehq/compare/v1.2.0...v1.2.1) (2026-11-05)
+
+
+### Bug Fixes
+
+* **deps:** bump x/net past CVE-2026-78669 ([f97b121](https://github.com/Arsolitt/terraform-provider-garagehq/commit/f97b121cf73bd5addef59e632705ef8e8459a42a))
+
 ## [1.2.0](https://github.com/Arsolitt/terraform-provider-garagehq/compare/v1.1.2...v1.2.0) (2026-09-06)
 
 
