@@ -1,5 +1,44 @@
 # Changelog
 
+## [1.3.0](https://github.com/Arsolitt/terraform-provider-garagehq/compare/v1.2.1...v1.3.0) (2026-11-06)
+
+
+### Features
+
+* add the garage_node data source ([cb02fd1](https://github.com/Arsolitt/terraform-provider-garagehq/commit/cb02fd114792939c58aa9cd0a07cb64f20d55ca5))
+* add the garage_node data source ([9ea123b](https://github.com/Arsolitt/terraform-provider-garagehq/commit/9ea123b0d5a21adc1038aeb2bd1d1ef42e8cc909))
+* **bucket:** add max_size and max_objects quotas ([2de5ef1](https://github.com/Arsolitt/terraform-provider-garagehq/commit/2de5ef1137feef4a6eb2a7a434326d0052a1bcd6))
+* **bucket:** add max_size and max_objects quotas ([5d6ace7](https://github.com/Arsolitt/terraform-provider-garagehq/commit/5d6ace76211b5a3e2e718d38a77290cc78124712))
+* **key:** import a key with a known id and secret ([46f8017](https://github.com/Arsolitt/terraform-provider-garagehq/commit/46f80178759725e2c088a853a11fcfa0457c14f2))
+* **key:** import a key with a known id and secret ([ec54a9d](https://github.com/Arsolitt/terraform-provider-garagehq/commit/ec54a9dd84bf940d5204addd5f1b2775eb0c87b0))
+* support `terraform import` ([3681c38](https://github.com/Arsolitt/terraform-provider-garagehq/commit/3681c3812923e54da8322647b624bfc6ef382a77))
+* support terraform import ([89ad148](https://github.com/Arsolitt/terraform-provider-garagehq/commit/89ad1484c83562ed9479996ee81c40798a1ce325))
+
+
+### Bug Fixes
+
+* **admin_token:** do not set a zero expiration ([496f8a7](https://github.com/Arsolitt/terraform-provider-garagehq/commit/496f8a70e0a5d1bc4321abaa4caa7d757c42eb39))
+* **admin_token:** keep the server expiration and normalize RFC3339 ([0e1c366](https://github.com/Arsolitt/terraform-provider-garagehq/commit/0e1c36687332ec4a6d07e599d30d00d3a1f69322))
+* **admin_token:** surface the Garage error on read ([79296e6](https://github.com/Arsolitt/terraform-provider-garagehq/commit/79296e62cadd2445ffd8055863fc7d81f75db23e))
+* **bucket:** apply global_alias changes ([78712b6](https://github.com/Arsolitt/terraform-provider-garagehq/commit/78712b633d40012cb85c451b7fa89fbbaa19a46e))
+* **bucket:** apply global_alias changes ([288d1a4](https://github.com/Arsolitt/terraform-provider-garagehq/commit/288d1a4aa50cf7a60a91aa8dc80d50dbaafb57c2))
+* **bucket:** configure lifecycle rules through the admin API ([8b4ab3f](https://github.com/Arsolitt/terraform-provider-garagehq/commit/8b4ab3f493bb39000c2b3bb0f39422826b5c1972))
+* **bucket:** configure lifecycle rules through the admin API ([4ceacbc](https://github.com/Arsolitt/terraform-provider-garagehq/commit/4ceacbce4cc333486c5cd4355c8c156267f6d9da))
+* **bucket:** make global alias removal idempotent ([6c90890](https://github.com/Arsolitt/terraform-provider-garagehq/commit/6c9089084e6cf6f2f5ed43d6e0efb3e7748c42b9))
+* **cluster_layout:** accept staged changes when no role changes ([2adcf63](https://github.com/Arsolitt/terraform-provider-garagehq/commit/2adcf63a3cee737281e53553715a877f988919ef))
+* **cluster_layout:** always send `tags` in a role change ([56a9386](https://github.com/Arsolitt/terraform-provider-garagehq/commit/56a938685b91e679c4edb1f4a1b1dbcd9c55e60a))
+* **cluster_layout:** harden staging changes and document revert semantics ([6db5093](https://github.com/Arsolitt/terraform-provider-garagehq/commit/6db50939a1e4d0d057e05770f4396fa548e51e31))
+* **cluster_layout:** keep the layout on destroy ([c07daa1](https://github.com/Arsolitt/terraform-provider-garagehq/commit/c07daa196045c9bdc807e2b0669c1c5e9733f932))
+* **cluster_layout:** keep the prior state when an update fails ([1ea91f4](https://github.com/Arsolitt/terraform-provider-garagehq/commit/1ea91f42f87222daca3410997a20945826110a9f))
+* **cluster_layout:** make role changes, drift, import and destroy work ([#16](https://github.com/Arsolitt/terraform-provider-garagehq/issues/16)) ([a449019](https://github.com/Arsolitt/terraform-provider-garagehq/commit/a449019d824299f097e1c4921cc4dcf88285bcfe))
+* **cluster_layout:** remove a node that leaves the configuration ([9c934d7](https://github.com/Arsolitt/terraform-provider-garagehq/commit/9c934d7a52a1df8a3a26c8796a7b633a85e11249))
+* **cluster_layout:** show `version` as unknown when roles change ([865efbc](https://github.com/Arsolitt/terraform-provider-garagehq/commit/865efbc5818db57723bd5f20119a349977e34f01))
+* **cluster_layout:** show a node that left the layout as drift ([e5a68b6](https://github.com/Arsolitt/terraform-provider-garagehq/commit/e5a68b65ee39f664a683514b7d04e30a016beedd))
+* **cluster_layout:** stage only the roles that change ([78db270](https://github.com/Arsolitt/terraform-provider-garagehq/commit/78db270280710ab02076720dd453425e402ff408))
+* **cluster_layout:** support the documented import ([64a2179](https://github.com/Arsolitt/terraform-provider-garagehq/commit/64a21796776771d6539310d58eb1828ebbfd2b5d))
+* **key:** surface Garage API errors and document destroy behavior ([ec553c0](https://github.com/Arsolitt/terraform-provider-garagehq/commit/ec553c0c496efa9365b6ca3faba4ba2cb1a9bf68))
+* **node:** make the self lookup explicit and document empty fields ([07f015b](https://github.com/Arsolitt/terraform-provider-garagehq/commit/07f015bb3249893ac918833e07e83b563554a426))
+
 ## [1.2.1](https://github.com/Arsolitt/terraform-provider-garagehq/compare/v1.2.0...v1.2.1) (2026-11-05)
 
 
