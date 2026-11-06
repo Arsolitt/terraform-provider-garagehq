@@ -13,7 +13,7 @@ import (
 )
 
 func TestAccGarageAdminToken_expiration(t *testing.T) {
-	name := acctest.RandomWithPrefix("acck-admin-token")
+	name := acctest.RandomWithPrefix("acc-admin-token")
 
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testAccPreCheck(t) },
