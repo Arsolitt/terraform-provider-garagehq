@@ -99,8 +99,8 @@ terraform import garage_admin_token.my_token tkn1234567890abcdef
 
 ### Optional
 
-- `expiration` (String) - Expiration time in RFC3339 format (e.g., `2025-12-31T23:59:59Z`)
-- `never_expires` (Boolean) - Set to true for tokens that should never expire
+- `expiration` (String) - Expiration time in RFC3339 format (e.g., `2025-12-31T23:59:59Z`), normalized to UTC. Omit it to keep the current expiration; to remove an expiration, set `never_expires = true`.
+- `never_expires` (Boolean) - Set to true for tokens that should never expire. Conflicts with a configured `expiration`.
 
 ### Read-Only
 

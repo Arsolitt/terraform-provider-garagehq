@@ -17,6 +17,21 @@ func resourceGarageAdminToken() *schema.Resource {
 		ReadContext:   resourceGarageAdminTokenRead,
 		UpdateContext: resourceGarageAdminTokenUpdate,
 		DeleteContext: resourceGarageAdminTokenDelete,
+		CustomizeDiff: func(ctx context.Context, d *schema.ResourceDiff, m interface{}) error {
+			raw := d.GetRawConfig()
+			if raw.IsNull() || !raw.IsKnown() {
+				return nil
+			}
+			expiration := raw.GetAttr("expiration")
+			neverExpires := raw.GetAttr("never_expires")
+			if expiration.IsNull() || !expiration.IsKnown() || expiration.AsString() == "" {
+				return nil
+			}
+			if neverExpires.IsNull() || !neverExpires.IsKnown() || !neverExpires.True() {
+				return nil
+			}
+			return fmt.Errorf("expiration and never_expires conflict: set only one of them")
+		},
 		Schema: map[string]*schema.Schema{
 			"name": {
 				Type:        schema.TypeString,
@@ -43,13 +58,15 @@ func resourceGarageAdminToken() *schema.Resource {
 			"expiration": {
 				Type:         schema.TypeString,
 				Optional:     true,
+				Computed:     true,
 				ValidateFunc: validateRFC3339,
-				Description:  "Expiration time (RFC3339 format)",
+				StateFunc:    normalizeRFC3339,
+				Description:  "Expiration time (RFC3339 format). Omit to keep the current value; set `never_expires` to remove an expiration",
 			},
 			"never_expires": {
 				Type:        schema.TypeBool,
 				Optional:    true,
-				Description: "Set the admin token to never expire",
+				Description: "Set the admin token to never expire. Conflicts with a configured `expiration`",
 			},
 			"expired": {
 				Type:        schema.TypeBool,
@@ -75,6 +92,20 @@ func validateRFC3339(v interface{}, k string) (ws []string, errors []error) {
 		errors = append(errors, fmt.Errorf("%q must be in RFC3339 format", k))
 	}
 	return
+}
+
+// normalizeRFC3339 canonicalizes the configured expiration to UTC seconds, the
+// form that Garage returns, so an offset or a fraction does not cause a diff.
+func normalizeRFC3339(v interface{}) string {
+	value, _ := v.(string)
+	if value == "" {
+		return ""
+	}
+	t, err := time.Parse(time.RFC3339, value)
+	if err != nil {
+		return value
+	}
+	return t.UTC().Format(time.RFC3339)
 }
 
 func resourceGarageAdminTokenCreate(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
@@ -178,8 +209,8 @@ func resourceGarageAdminTokenRead(ctx context.Context, d *schema.ResourceData, m
 	if err := d.Set("expired", token.GetExpired()); err != nil {
 		return diag.FromErr(err)
 	}
-	if token.HasCreated() {
-		if err := d.Set("created", token.GetCreated().Format(time.RFC3339)); err != nil {
+	if t, _ := token.GetCreatedOk(); t != nil {
+		if err := d.Set("created", t.Format(time.RFC3339)); err != nil {
 			return diag.FromErr(err)
 		}
 	}

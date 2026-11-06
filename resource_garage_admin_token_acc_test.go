@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"testing"
 	"time"
 
@@ -41,6 +42,11 @@ func TestAccGarageAdminToken_expiration(t *testing.T) {
 					resource.TestCheckResourceAttr("garage_admin_token.test", "expiration", ""),
 					testAccCheckGarageAdminTokenExpiration(t, nil),
 				),
+			},
+			{
+				Config:      testAccGarageAdminTokenConfig(name, "expiration = \"2099-01-01T00:00:00Z\"\n  never_expires = true"),
+				PlanOnly:    true,
+				ExpectError: regexp.MustCompile(`expiration and never_expires conflict`),
 			},
 		},
 	})
@@ -108,5 +114,20 @@ func testAccCheckGarageAdminTokenDestroy(t *testing.T) resource.TestCheckFunc {
 			}
 		}
 		return nil
+	}
+}
+
+func TestNormalizeRFC3339(t *testing.T) {
+	tests := map[string]string{
+		"":                          "",
+		"2099-01-01T00:00:00Z":      "2099-01-01T00:00:00Z",
+		"2099-01-01T03:00:00+03:00": "2099-01-01T00:00:00Z",
+		"2099-01-01T00:00:00.500Z":  "2099-01-01T00:00:00Z",
+		"not-a-time":                "not-a-time",
+	}
+	for in, want := range tests {
+		if got := normalizeRFC3339(in); got != want {
+			t.Errorf("normalizeRFC3339(%q) = %q, want %q", in, got, want)
+		}
 	}
 }
