@@ -621,11 +621,11 @@ func TestAccGarageClusterLayout_applyFails(t *testing.T) {
 	})
 }
 
-// TestAccGarageClusterLayout_updateApplyFails changes the storage role of
-// the only storage node to a gateway. Garage refuses to apply such a layout.
-// Because a mistake in the provider could remove the role, the test runs
-// only when GARAGE_ACC_DISPOSABLE is set, on a test server that can lose its
-// layout.
+// TestAccGarageClusterLayout_updateApplyFails removes the storage role of
+// the only storage node and a gateway node in one update. Garage refuses to
+// apply such a layout. Because a mistake in the provider could remove the
+// storage role, the test runs only when GARAGE_ACC_DISPOSABLE is set, on a
+// test server that can lose its layout.
 func TestAccGarageClusterLayout_updateApplyFails(t *testing.T) {
 	if os.Getenv("GARAGE_ACC_DISPOSABLE") == "" {
 		t.Skip("set GARAGE_ACC_DISPOSABLE to run this test on a disposable Garage")
@@ -634,33 +634,33 @@ func TestAccGarageClusterLayout_updateApplyFails(t *testing.T) {
 	client := testAccClient(t)
 	version := testAccGetLayout(t, client).Version
 	selfRole := testAccClusterLayoutRole(self.id, self.zone, strconv.FormatInt(*self.capacity, 10), self.tags...)
-	selfConfig := testAccClusterLayoutConfig(selfRole)
+	config := testAccClusterLayoutConfig(selfRole, testAccClusterLayoutRole(testAccFakeNodeID, "acc-zone", ""))
 
 	resource.Test(t, resource.TestCase{
 		ProtoV5ProviderFactories: testAccProtoV5ProviderFactories,
 		Steps: []resource.TestStep{
 			{
-				// The layout is already as configured, thus the resource
-				// creates without a new layout version.
-				Config: selfConfig,
-				Check:  testAccCheckLayoutVersion(client, "garage_cluster_layout.test", version),
+				// The fake gateway is added in a new layout version.
+				Config: config,
+				Check:  testAccCheckLayoutVersion(client, "garage_cluster_layout.test", version+1),
 			},
 			{
-				// The update removes the last storage role.
+				// The update removes the fake node and the last storage role.
 				Config:      testAccClusterLayoutConfig(testAccClusterLayoutRole(self.id, self.zone, "")),
 				ExpectError: regexp.MustCompile("positive capacity"),
 			},
 			{
-				// The failed update restored the prior state, thus the
-				// configuration that gives self its capacity again plans no
-				// change. The provider also reverted the staged change.
+				// The failed update restored the prior state, including the
+				// fake node that a refresh alone cannot recover, thus the
+				// original configuration plans no change. The provider also
+				// reverted the staged changes.
 				PreConfig: func() {
 					layout := testAccGetLayout(t, client)
-					if layout.Version != version || len(layout.StagedRoleChanges) != 0 {
-						t.Errorf("got layout version %d with %d staged changes, want version %d with 0", layout.Version, len(layout.StagedRoleChanges), version)
+					if layout.Version != version+1 || len(layout.StagedRoleChanges) != 0 {
+						t.Errorf("got layout version %d with %d staged changes, want version %d with 0", layout.Version, len(layout.StagedRoleChanges), version+1)
 					}
 				},
-				Config:   selfConfig,
+				Config:   config,
 				PlanOnly: true,
 			},
 		},
