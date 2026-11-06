@@ -120,6 +120,12 @@ func resourceGarageBucketKeyRead(ctx context.Context, d *schema.ResourceData, m 
 		}
 	}
 
+	// Garage lists a bucket on a key only while the key has a permission on it.
+	// A resource that sets no permission therefore has no entry, and is not gone.
+	if !d.Get("read").(bool) && !d.Get("write").(bool) && !d.Get("owner").(bool) {
+		return nil
+	}
+
 	// Key doesn't have permissions on this bucket
 	d.SetId("")
 	return nil
@@ -175,22 +181,38 @@ func resourceGarageBucketKeyUpdate(ctx context.Context, d *schema.ResourceData, 
 	write := d.Get("write").(bool)
 	owner := d.Get("owner").(bool)
 
-	perms := garage.NewApiBucketKeyPerm()
-	perms.SetRead(read)
-	perms.SetWrite(write)
-	perms.SetOwner(owner)
+	// A request sets only the permissions that it marks true: `AllowBucketKey`
+	// cannot remove a permission, and `DenyBucketKey` cannot add one. Deny first,
+	// so that a failed update does not leave access that the configuration removed.
+	denied := garage.NewApiBucketKeyPerm()
+	denied.SetRead(!read)
+	denied.SetWrite(!write)
+	denied.SetOwner(!owner)
 
-	updateReq := garage.NewBucketKeyPermChangeRequest(keyID, bucketID, *perms)
+	denyReq := garage.NewBucketKeyPermChangeRequest(keyID, bucketID, *denied)
 
-	_, resp, err := client.Client.PermissionAPI.AllowBucketKey(client.WithAuth(ctx)).Body(*updateReq).Execute()
+	_, resp, err := client.Client.PermissionAPI.DenyBucketKey(client.WithAuth(ctx)).Body(*denyReq).Execute()
+	if err != nil {
+		return diag.FromErr(fmt.Errorf("failed to remove bucket key permissions: %w", err))
+	}
+	if resp.Body != nil {
+		_ = resp.Body.Close()
+	}
+
+	allowed := garage.NewApiBucketKeyPerm()
+	allowed.SetRead(read)
+	allowed.SetWrite(write)
+	allowed.SetOwner(owner)
+
+	allowReq := garage.NewBucketKeyPermChangeRequest(keyID, bucketID, *allowed)
+
+	_, resp, err = client.Client.PermissionAPI.AllowBucketKey(client.WithAuth(ctx)).Body(*allowReq).Execute()
 	if err != nil {
 		return diag.FromErr(fmt.Errorf("failed to update bucket key permissions: %w", err))
 	}
-	defer func() {
-		if resp.Body != nil {
-			_ = resp.Body.Close()
-		}
-	}()
+	if resp.Body != nil {
+		_ = resp.Body.Close()
+	}
 
 	return resourceGarageBucketKeyRead(ctx, d, m)
 }

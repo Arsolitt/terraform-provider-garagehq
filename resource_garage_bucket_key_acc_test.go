@@ -41,6 +41,65 @@ func TestAccGarageBucketKey_basic(t *testing.T) {
 	})
 }
 
+// TestAccGarageBucketKey_update checks each permission change on the live
+// server: the state alone does not show that Garage removed a permission.
+func TestAccGarageBucketKey_update(t *testing.T) {
+	name := acctest.RandomWithPrefix("acc-bucket-key")
+
+	step := func(read, write bool) resource.TestStep {
+		return resource.TestStep{
+			Config: testAccGarageBucketKeyConfig(name, read, write),
+			Check:  testAccCheckGarageBucketKeyPerms(t, read, write),
+		}
+	}
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV5ProviderFactories: testAccProtoV5ProviderFactories,
+		Steps: []resource.TestStep{
+			step(true, true),
+			step(true, false),
+			step(false, true),
+			step(false, false),
+			step(true, true),
+		},
+	})
+}
+
+// testAccCheckGarageBucketKeyPerms compares the permissions that Garage reports
+// for `garage_bucket_key.test` with the expected values.
+func testAccCheckGarageBucketKeyPerms(t *testing.T, read, write bool) resource.TestCheckFunc {
+	return func(s *terraform.State) error {
+		rs, ok := s.RootModule().Resources["garage_bucket_key.test"]
+		if !ok {
+			return fmt.Errorf("garage_bucket_key.test is not in the state")
+		}
+		bucketID, keyID, ok := strings.Cut(rs.Primary.ID, "/")
+		if !ok {
+			return fmt.Errorf("malformed garage_bucket_key ID %q", rs.Primary.ID)
+		}
+		client := testAccClient(t)
+		key, resp, err := client.Client.AccessKeyAPI.GetKeyInfo(client.WithAuth(context.Background())).Id(keyID).Execute()
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+		if err != nil {
+			return fmt.Errorf("failed to read key %s: %w", keyID, err)
+		}
+		var gotRead, gotWrite bool
+		for _, bucket := range key.GetBuckets() {
+			if bucket.GetId() == bucketID {
+				perms := bucket.GetPermissions()
+				gotRead, gotWrite = perms.GetRead(), perms.GetWrite()
+			}
+		}
+		if gotRead != read || gotWrite != write {
+			return fmt.Errorf("Garage reports read=%t write=%t, expected read=%t write=%t", gotRead, gotWrite, read, write)
+		}
+		return nil
+	}
+}
+
 func TestAccGarageBucketKey_import(t *testing.T) {
 	name := acctest.RandomWithPrefix("acc-bucket-key-import")
 	config := testAccProviderConfig() + fmt.Sprintf(`
