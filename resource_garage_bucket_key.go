@@ -121,8 +121,20 @@ func resourceGarageBucketKeyRead(ctx context.Context, d *schema.ResourceData, m 
 	}
 
 	// Garage lists a bucket on a key only while the key has a permission on it.
-	// A resource that sets no permission therefore has no entry, and is not gone.
+	// A resource that sets no permission therefore has no entry in the list:
+	// the resource is gone only when the bucket itself is gone.
 	if !d.Get("read").(bool) && !d.Get("write").(bool) && !d.Get("owner").(bool) {
+		_, resp, err := client.Client.BucketAPI.GetBucketInfo(client.WithAuth(ctx)).Id(bucketID).Execute()
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+		if err != nil {
+			if resp != nil && resp.StatusCode == http.StatusNotFound {
+				d.SetId("")
+			} else {
+				return diag.FromErr(fmt.Errorf("failed to read bucket: %w", err))
+			}
+		}
 		return nil
 	}
 

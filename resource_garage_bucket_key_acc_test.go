@@ -246,6 +246,74 @@ resource "garage_bucket_key" "test" {
 `, bucketID, keyID)
 }
 
+// TestAccGarageBucketKey_refresh_no_permissions checks that a refresh keeps a
+// resource that grants no permission while its bucket exists, and removes it
+// once the bucket is gone: Garage drops the bucket from the key's bucket list
+// when no permission exists, so the missing entry alone does not decide.
+func TestAccGarageBucketKey_refresh_no_permissions(t *testing.T) {
+	if os.Getenv("TF_ACC") == "" {
+		t.Skip("acceptance tests are skipped unless TF_ACC is set")
+	}
+	testAccPreCheck(t)
+
+	client := testAccClient(t)
+	bucketID, keyID := testAccCreateBucketAndKey(t, client)
+
+	config := testAccProviderConfig() + fmt.Sprintf(`
+resource "garage_bucket_key" "test" {
+  bucket_id     = %[1]q
+  access_key_id = %[2]q
+  read          = false
+  write         = false
+  owner         = false
+}
+`, bucketID, keyID)
+
+	deleteBucket := func() {
+		resp, err := client.Client.BucketAPI.DeleteBucket(client.WithAuth(context.Background())).Id(bucketID).Execute()
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+		if err != nil {
+			t.Fatalf("failed to delete bucket %s: %v", bucketID, err)
+		}
+	}
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV5ProviderFactories: testAccProtoV5ProviderFactories,
+		CheckDestroy:             testAccCheckGarageBucketKeyDestroy(t),
+		Steps: []resource.TestStep{
+			{
+				Config: config,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("garage_bucket_key.test", "bucket_id", bucketID),
+					resource.TestCheckResourceAttr("garage_bucket_key.test", "read", "false"),
+					resource.TestCheckResourceAttr("garage_bucket_key.test", "write", "false"),
+					resource.TestCheckResourceAttr("garage_bucket_key.test", "owner", "false"),
+				),
+			},
+			{
+				RefreshState: true,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("garage_bucket_key.test", "bucket_id", bucketID),
+				),
+			},
+			{
+				RefreshState:       true,
+				PreConfig:          deleteBucket,
+				ExpectNonEmptyPlan: true,
+				Check: func(s *terraform.State) error {
+					if _, ok := s.RootModule().Resources["garage_bucket_key.test"]; ok {
+						return fmt.Errorf("garage_bucket_key.test is still in the state after its bucket was deleted")
+					}
+					return nil
+				},
+			},
+		},
+	})
+}
+
 // testAccCreateBucketAndKey creates a bucket and an access key outside
 // Terraform, and schedules their removal after the test.
 func testAccCreateBucketAndKey(t *testing.T, client *GarageClient) (bucketID, keyID string) {
@@ -267,7 +335,8 @@ func testAccCreateBucketAndKey(t *testing.T, client *GarageClient) (bucketID, ke
 		if resp != nil && resp.Body != nil {
 			_ = resp.Body.Close()
 		}
-		if err != nil {
+		// a test may delete the fixture bucket itself
+		if err != nil && (resp == nil || resp.StatusCode != http.StatusNotFound) {
 			t.Errorf("failed to delete bucket %s: %v", bucketID, err)
 		}
 	})
