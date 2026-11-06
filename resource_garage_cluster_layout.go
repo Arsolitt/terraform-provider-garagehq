@@ -258,16 +258,14 @@ func resourceGarageClusterLayoutCreate(ctx context.Context, d *schema.ResourceDa
 // It also removes the nodes in removed from the layout. It ignores a node
 // in removed that is not in the layout.
 //
-// It refuses to continue when the layout already has staged changes,
-// because the apply would also apply these changes. If the apply fails,
-// it reverts the changes that it staged.
+// It refuses to apply a new version when the layout already has staged
+// changes, because the apply would also apply these changes. It does not
+// refuse when no role must change, because then it applies nothing. If the
+// apply fails, it reverts the changes that it staged.
 func applyClusterLayoutRoles(ctx context.Context, client *GarageClient, desired []nodeRoleChange, removed []string) (int64, error) {
 	layout, err := getClusterLayoutRaw(ctx, client)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get cluster layout: %w", err)
-	}
-	if len(layout.StagedRoleChanges) > 0 || layout.StagedParameters != nil {
-		return 0, fmt.Errorf("the cluster layout has staged changes that are not applied; apply or revert them first (`garage layout show`)")
 	}
 
 	current := make(map[string]layoutNodeRole, len(layout.Roles))
@@ -289,6 +287,10 @@ func applyClusterLayoutRoles(ctx context.Context, client *GarageClient, desired 
 	}
 	if len(changes) == 0 {
 		return layout.Version, nil
+	}
+
+	if len(layout.StagedRoleChanges) > 0 || layout.StagedParameters != nil {
+		return 0, fmt.Errorf("the cluster layout has staged changes that are not applied; apply or revert them first (`garage layout show`)")
 	}
 
 	if _, err := updateClusterLayoutRaw(ctx, client, changes); err != nil {

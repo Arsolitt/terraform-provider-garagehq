@@ -275,7 +275,7 @@ Update the `capacity` value. Garage will rebalance data accordingly.
 
 ### Staged Changes
 
-The provider stages only the roles that are different from the current layout, and applies a new layout version only when it staged a change. It refuses to change a layout that has staged changes that are not applied, for example from `garage layout assign`, because the apply would also apply them. Apply or revert them first with `garage layout apply` or `garage layout revert`.
+The provider stages only the roles that are different from the current layout, and applies a new layout version only when it staged a change. When a role must change, it refuses to continue if the layout has staged changes that are not applied, for example from `garage layout assign`, because the apply would also apply them. Apply or revert them first with `garage layout apply` or `garage layout revert`. When no role must change, the provider applies nothing, thus staged changes do not stop it.
 
 ### Destroying the Layout Resource
 

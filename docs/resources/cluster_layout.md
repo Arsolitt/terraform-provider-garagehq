@@ -174,7 +174,7 @@ resource "garage_cluster_layout" "example" {
 
 1. **Layout Changes**: Changes to the layout are applied immediately. Ensure you have proper change management procedures. The provider stages only the roles that are different from the current layout, and applies a new layout version only when it staged a change.
 
-2. **Staged Changes**: The provider refuses to change the layout when it has staged changes that are not applied, for example from `garage layout assign`, because the apply would also apply them. Apply or revert them first (`garage layout apply` or `garage layout revert`). When Garage refuses to apply the layout, the provider reverts the changes that it staged.
+2. **Staged Changes**: When a role must change, the provider refuses to continue if the layout has staged changes that are not applied, for example from `garage layout assign`, because the apply would also apply them. Apply or revert them first (`garage layout apply` or `garage layout revert`). When no role must change, the provider applies nothing, thus staged changes do not stop it. When Garage refuses to apply the layout, the provider reverts the changes that it staged.
 
 3. **Managed Nodes**: The resource manages only the nodes in `roles`. It does not change or remove the role of a node that is not in `roles`, and that node is not in the state. When you remove a node from `roles`, the provider removes the node from the layout. When a managed node leaves the layout outside Terraform, the next plan adds it again.
 

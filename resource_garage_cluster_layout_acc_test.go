@@ -12,6 +12,7 @@ import (
 
 	garage "git.deuxfleurs.fr/garage-sdk/garage-admin-sdk-golang"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+	"github.com/hashicorp/terraform-plugin-testing/plancheck"
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
 )
 
@@ -351,6 +352,51 @@ func TestAccGarageClusterLayout_stagedChanges(t *testing.T) {
 				PlanOnly: true,
 				// Create failed, thus there is still a resource to create.
 				ExpectNonEmptyPlan: true,
+			},
+		},
+	})
+}
+
+// TestAccGarageClusterLayout_noRoleChangeWithStagedChanges checks that staged
+// changes do not stop an update that changes no role. The two spellings of
+// the capacity cause the update, but they have the same value.
+func TestAccGarageClusterLayout_noRoleChangeWithStagedChanges(t *testing.T) {
+	self := testAccLayoutPreCheck(t)
+	client := testAccClient(t)
+	version := testAccGetLayout(t, client).Version
+	capacity := strconv.FormatInt(*self.capacity, 10)
+	sameCapacity := capacity + ".0"
+
+	resource.Test(t, resource.TestCase{
+		ProtoV5ProviderFactories: testAccProtoV5ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccClusterLayoutConfig(testAccClusterLayoutRole(self.id, self.zone, capacity, self.tags...)),
+			},
+			{
+				PreConfig: func() {
+					testAccStageLayout(t, client, nodeRoleChange{Id: testAccFakeNodeID, Zone: "acc-zone"})
+				},
+				Config: testAccClusterLayoutConfig(testAccClusterLayoutRole(self.id, self.zone, sameCapacity, self.tags...)),
+				ConfigPlanChecks: resource.ConfigPlanChecks{
+					PreApply: []plancheck.PlanCheck{
+						plancheck.ExpectResourceAction("garage_cluster_layout.test", plancheck.ResourceActionUpdate),
+					},
+				},
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckLayoutVersion(client, "garage_cluster_layout.test", version),
+					resource.TestCheckResourceAttr("garage_cluster_layout.test", "roles.0.capacity", sameCapacity),
+					func(*terraform.State) error {
+						layout, err := getClusterLayoutRaw(context.Background(), client)
+						if err != nil {
+							return err
+						}
+						if len(layout.StagedRoleChanges) != 1 {
+							return fmt.Errorf("got %d staged changes, want 1", len(layout.StagedRoleChanges))
+						}
+						return nil
+					},
+				),
 			},
 		},
 	})
