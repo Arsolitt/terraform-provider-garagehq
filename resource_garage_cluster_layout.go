@@ -435,6 +435,17 @@ func resourceGarageClusterLayoutUpdate(ctx context.Context, d *schema.ResourceDa
 		desired := buildNodeRoles(newRoles.([]interface{}))
 		version, err := applyClusterLayoutRoles(ctx, client, desired, removedNodeIDs(buildNodeRoles(oldRoles.([]interface{})), desired))
 		if err != nil {
+			// The SDK saves the planned state when Update returns an error.
+			// Keep the prior state, because the layout did not change. Else
+			// the next apply does not see the diff, and does not remove the
+			// nodes that left the configuration.
+			oldVersion, _ := d.GetChange("version")
+			if setErr := d.Set("roles", oldRoles); setErr != nil {
+				return diag.FromErr(errors.Join(err, setErr))
+			}
+			if setErr := d.Set("version", oldVersion); setErr != nil {
+				return diag.FromErr(errors.Join(err, setErr))
+			}
 			return diag.FromErr(err)
 		}
 		if err := d.Set("version", version); err != nil {

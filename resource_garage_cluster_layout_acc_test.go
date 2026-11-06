@@ -192,17 +192,20 @@ func (r testAccLayoutRole) String() string {
 // `version` attribute of the resource is the same.
 // testAccStageLayout stages changes to the cluster layout, and reverts
 // them at the end of the test.
+func testAccRevertLayout(t *testing.T, client *GarageClient) {
+	t.Helper()
+	_, resp, err := client.Client.ClusterLayoutAPI.RevertClusterLayout(client.WithAuth(context.Background())).Execute()
+	if resp != nil && resp.Body != nil {
+		_ = resp.Body.Close()
+	}
+	if err != nil {
+		t.Errorf("failed to revert cluster layout: %v", err)
+	}
+}
+
 func testAccStageLayout(t *testing.T, client *GarageClient, changes ...nodeRoleChange) {
 	t.Helper()
-	t.Cleanup(func() {
-		_, resp, err := client.Client.ClusterLayoutAPI.RevertClusterLayout(client.WithAuth(context.Background())).Execute()
-		if resp != nil && resp.Body != nil {
-			_ = resp.Body.Close()
-		}
-		if err != nil {
-			t.Errorf("failed to revert cluster layout: %v", err)
-		}
-	})
+	t.Cleanup(func() { testAccRevertLayout(t, client) })
 	if _, err := updateClusterLayoutRaw(context.Background(), client, changes); err != nil {
 		t.Fatal(err)
 	}
@@ -374,6 +377,49 @@ func TestAccGarageClusterLayout_removeNode(t *testing.T) {
 				// The gateway is no longer in the configuration, thus it
 				// leaves the layout. Self keeps its role.
 				Config: testAccClusterLayoutConfig(selfRole),
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckNoLayoutRole(client, testAccFakeNodeID),
+					testAccCheckLayoutRole(client, self),
+					testAccCheckLayoutVersion(client, "garage_cluster_layout.test", version+2),
+					resource.TestCheckResourceAttr("garage_cluster_layout.test", "roles.#", "1"),
+				),
+			},
+			{
+				Config:   testAccClusterLayoutConfig(selfRole),
+				PlanOnly: true,
+			},
+		},
+	})
+}
+
+// TestAccGarageClusterLayout_updateFails checks that an update that fails
+// keeps the prior state, thus the next apply tries the change again.
+func TestAccGarageClusterLayout_updateFails(t *testing.T) {
+	self := testAccLayoutPreCheck(t)
+	client := testAccClient(t)
+	version := testAccGetLayout(t, client).Version
+	selfRole := testAccClusterLayoutRole(self.id, self.zone, strconv.FormatInt(*self.capacity, 10), self.tags...)
+	bothRoles := testAccClusterLayoutConfig(selfRole, testAccClusterLayoutRole(testAccFakeNodeID, "acc-zone", ""))
+
+	resource.Test(t, resource.TestCase{
+		ProtoV5ProviderFactories: testAccProtoV5ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: bothRoles,
+				Check:  testAccCheckLayoutVersion(client, "garage_cluster_layout.test", version+1),
+			},
+			{
+				// The staged change is on a node that is not in the
+				// configuration, thus it does not hide the role change.
+				PreConfig: func() {
+					testAccStageLayout(t, client, nodeRoleChange{Id: strings.Repeat("b", 64), Zone: "acc-zone"})
+				},
+				Config:      testAccClusterLayoutConfig(selfRole),
+				ExpectError: regexp.MustCompile("staged changes"),
+			},
+			{
+				PreConfig: func() { testAccRevertLayout(t, client) },
+				Config:    testAccClusterLayoutConfig(selfRole),
 				Check: resource.ComposeTestCheckFunc(
 					testAccCheckNoLayoutRole(client, testAccFakeNodeID),
 					testAccCheckLayoutRole(client, self),
