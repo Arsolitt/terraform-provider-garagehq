@@ -144,7 +144,7 @@ terraform import garage_cluster_layout.main cluster-layout
 
 ### roles Block
 
-- `id` (String, Required) - Node ID (must match the node's configured ID)
+- `id` (String, Required) - Node ID, the public key of the node that Garage generates on the first start. Read it with the [`garage_node`](../data-sources/node.md) data source or `garage node id`.
 - `zone` (String, Required) - Zone assigned to the node for data replication
 - `capacity` (String, Optional) - Storage capacity with unit suffix (e.g., `1G`, `500M`, `2TiB`). Omit for gateway nodes.
 - `tags` (List of String, Optional) - Tags assigned to the node
@@ -180,9 +180,9 @@ resource "garage_cluster_layout" "example" {
 
 1. **Layout Changes**: Changes to the layout are applied immediately. Ensure you have proper change management procedures. The provider stages only the roles that are different from the current layout, and applies a new layout version only when it staged a change.
 
-2. **Staged Changes**: When a role must change, the provider refuses to continue if the layout has staged changes that are not applied, for example from `garage layout assign`, because the apply would also apply them. Apply or revert them first (`garage layout apply` or `garage layout revert`). When no role must change, the provider applies nothing, thus staged changes do not stop it. When Garage refuses to apply the layout, the provider reverts the changes that it staged.
+2. **Staged Changes**: When a role must change, the provider refuses to continue if the layout has staged changes that are not applied, for example from `garage layout assign`, because the apply would also apply them. Apply or revert them first (`garage layout apply` or `garage layout revert`). When no role must change, the provider applies nothing, thus staged changes do not stop it. When the apply fails, the provider reverts the changes that it staged to restore the prior layout. A revert clears the entire staging area, roles and parameters alike, thus changes that you stage concurrently with an apply can be lost.
 
-3. **Managed Nodes**: The resource manages only the nodes in `roles`. It does not change or remove the role of a node that is not in `roles`, and that node is not in the state. When you remove a node from `roles`, the provider removes the node from the layout. When a managed node leaves the layout outside Terraform, the next plan adds it again.
+3. **Managed Nodes**: The resource manages only the nodes in `roles`. It does not change or remove the role of a node that is not in `roles`, and that node is not in the state. When you remove a node from `roles`, the provider removes the node from the layout. When a managed node leaves the layout outside Terraform, the next plan adds it again. An import is the exception: it writes every node of the layout to the state, thus the next apply removes the nodes that the configuration does not list.
 
 4. **Destroy**: `terraform destroy` removes the resource only from the state. The roles of the nodes stay in the layout, and the provider does not revert staged changes. To remove a node from the layout, remove it from `roles` and apply.
 

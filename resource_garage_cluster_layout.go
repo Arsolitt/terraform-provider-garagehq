@@ -30,6 +30,32 @@ func validateCapacity(v interface{}, k string) (ws []string, errors []error) {
 	return
 }
 
+// validateRoleIDs rejects duplicate node IDs. Two roles for the same node
+// make the layout oscillate, because each update reverts the other. It skips
+// empty IDs, which are unknown when another resource provides them.
+func validateRoleIDs(roles interface{}) error {
+	list, ok := roles.([]interface{})
+	if !ok {
+		return nil
+	}
+	seen := make(map[string]bool, len(list))
+	for _, role := range list {
+		r, ok := role.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		id, _ := r["id"].(string)
+		if id == "" {
+			continue
+		}
+		if seen[id] {
+			return fmt.Errorf("duplicate node ID %q in the cluster layout roles", id)
+		}
+		seen[id] = true
+	}
+	return nil
+}
+
 // nodeRoleChange is a custom type to work around Garage v2.2 oneOf validation issue.
 // The server validates oneOf schemas in order and expects "remove" field in the first schema.
 type nodeRoleChange struct {
@@ -156,8 +182,10 @@ func clusterLayoutRaw(ctx context.Context, client *GarageClient, method, endpoin
 	return &layout, nil
 }
 
-// buildNodeRoles converts terraform schema roles to nodeRoleChange slice.
-func buildNodeRoles(roles []interface{}) []nodeRoleChange {
+// buildNodeRoles converts terraform schema roles to nodeRoleChange slice. A
+// capacity that ParseCapacity rejects is an error, because a role without
+// capacity is a gateway: silently dropping it would empty the node.
+func buildNodeRoles(roles []interface{}) ([]nodeRoleChange, error) {
 	nodeRoles := make([]nodeRoleChange, len(roles))
 	for i, role := range roles {
 		r := role.(map[string]interface{})
@@ -168,13 +196,14 @@ func buildNodeRoles(roles []interface{}) []nodeRoleChange {
 		}
 		if capacity, ok := r["capacity"].(string); ok && capacity != "" {
 			c, err := ParseCapacity(capacity)
-			if err == nil {
-				nodeRole.Capacity = &c
+			if err != nil {
+				return nil, fmt.Errorf("node %q: %w", nodeRole.Id, err)
 			}
+			nodeRole.Capacity = &c
 		}
 		nodeRoles[i] = nodeRole
 	}
-	return nodeRoles
+	return nodeRoles, nil
 }
 
 func resourceGarageClusterLayout() *schema.Resource {
@@ -188,6 +217,13 @@ func resourceGarageClusterLayout() *schema.Resource {
 		},
 		// A change of the roles can apply a new layout version.
 		CustomizeDiff: func(ctx context.Context, d *schema.ResourceDiff, m interface{}) error {
+			// A refresh-only plan reads the prior state, which has no
+			// configuration to fix.
+			if d.Id() == "" || d.HasChange("roles") {
+				if err := validateRoleIDs(d.Get("roles")); err != nil {
+					return err
+				}
+			}
 			if d.HasChange("roles") {
 				return d.SetNewComputed("version")
 			}
@@ -237,7 +273,11 @@ func resourceGarageClusterLayout() *schema.Resource {
 func resourceGarageClusterLayoutCreate(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
 	client := m.(*GarageClient)
 
-	version, err := applyClusterLayoutRoles(ctx, client, buildNodeRoles(d.Get("roles").([]interface{})), nil)
+	desired, err := buildNodeRoles(d.Get("roles").([]interface{}))
+	if err != nil {
+		return diag.FromErr(err)
+	}
+	version, err := applyClusterLayoutRoles(ctx, client, desired, nil)
 	if err != nil {
 		return diag.FromErr(err)
 	}
@@ -289,8 +329,8 @@ func applyClusterLayoutRoles(ctx context.Context, client *GarageClient, desired 
 		return layout.Version, nil
 	}
 
-	if len(layout.StagedRoleChanges) > 0 || layout.StagedParameters != nil {
-		return 0, fmt.Errorf("the cluster layout has staged changes that are not applied; apply or revert them first (`garage layout show`)")
+	if len(layout.StagedRoleChanges) > 0 || len(layout.StagedParameters) > 0 {
+		return 0, fmt.Errorf("the cluster layout has staged changes that are not applied; apply or revert them first (`garage layout apply` or `garage layout revert`)")
 	}
 
 	if _, err := updateClusterLayoutRaw(ctx, client, changes); err != nil {
@@ -317,16 +357,6 @@ func applyClusterLayoutRoles(ctx context.Context, client *GarageClient, desired 
 	}
 
 	return version, nil
-}
-
-// garageAPIError adds the response body of an API error to err, because the
-// body holds the reason that Garage gives.
-func garageAPIError(err error) error {
-	var apiErr *garage.GenericOpenAPIError
-	if errors.As(err, &apiErr) && len(apiErr.Body()) > 0 {
-		return fmt.Errorf("%w: %s", err, apiErr.Body())
-	}
-	return err
 }
 
 // layoutRoleEqual tells if the role of a node in the layout is the same as
@@ -429,13 +459,27 @@ func resourceGarageClusterLayoutImport(ctx context.Context, d *schema.ResourceDa
 	return []*schema.ResourceData{d}, nil
 }
 
+// updateLayoutRoles applies the roles in newRoles and removes the nodes in
+// oldRoles that newRoles no longer has. It returns the layout version after
+// the change.
+func updateLayoutRoles(ctx context.Context, client *GarageClient, oldRoles, newRoles []interface{}) (int64, error) {
+	desired, err := buildNodeRoles(newRoles)
+	if err != nil {
+		return 0, err
+	}
+	previous, err := buildNodeRoles(oldRoles)
+	if err != nil {
+		return 0, err
+	}
+	return applyClusterLayoutRoles(ctx, client, desired, removedNodeIDs(previous, desired))
+}
+
 func resourceGarageClusterLayoutUpdate(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
 	client := m.(*GarageClient)
 
 	if d.HasChange("roles") {
 		oldRoles, newRoles := d.GetChange("roles")
-		desired := buildNodeRoles(newRoles.([]interface{}))
-		version, err := applyClusterLayoutRoles(ctx, client, desired, removedNodeIDs(buildNodeRoles(oldRoles.([]interface{})), desired))
+		version, err := updateLayoutRoles(ctx, client, oldRoles.([]interface{}), newRoles.([]interface{}))
 		if err != nil {
 			// The SDK saves the planned state when Update returns an error.
 			// Keep the prior state, because the layout did not change. Else

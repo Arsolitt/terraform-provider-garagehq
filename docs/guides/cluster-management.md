@@ -270,7 +270,7 @@ resource "garage_cluster_layout" "production" {
 
 ### Removing Nodes
 
-Remove the node from the `roles` block. The provider removes the node from the layout and applies a new layout version. Garage then moves the data of the node to the remaining nodes.
+Remove the node from the `roles` block. The provider removes the node from the layout and applies a new layout version. Garage recomputes the layout, and the replicas on the remaining nodes take over. Garage does not copy data off the removed node, thus with `replication_factor = 1` the data that only that node held is lost.
 
 The provider removes only the nodes that were in `roles` before. It does not remove a node that the configuration never managed.
 
