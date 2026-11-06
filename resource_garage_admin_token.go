@@ -185,18 +185,18 @@ func resourceGarageAdminTokenRead(ctx context.Context, d *schema.ResourceData, m
 	tokenID := d.Id()
 
 	token, resp, err := client.Client.AdminAPITokenAPI.GetAdminTokenInfo(client.WithAuth(ctx)).Id(tokenID).Execute()
+	defer func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	}()
 	if err != nil {
 		if resp != nil && resp.StatusCode == http.StatusNotFound {
 			d.SetId("")
 			return nil
 		}
-		return diag.FromErr(fmt.Errorf("failed to read admin token: %w", err))
+		return diag.FromErr(fmt.Errorf("failed to read admin token: %w", garageAPIError(err)))
 	}
-	defer func() {
-		if resp.Body != nil {
-			_ = resp.Body.Close()
-		}
-	}()
 
 	if token.HasId() {
 		if err := d.Set("id", token.GetId()); err != nil {
