@@ -72,11 +72,31 @@ resource "garage_bucket_key" "backup_access" {
 
 ## Import
 
-Buckets can be imported using the bucket ID:
+Buckets can be imported using the bucket ID (64 hex digits) or a global alias:
 
 ```bash
-terraform import garage_bucket.my_bucket abc123def456
+terraform import garage_bucket.my_bucket 6a8e3f0f1b2c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6
+terraform import garage_bucket.my_bucket my-bucket
 ```
+
+Or with an `import` block:
+
+```hcl
+import {
+  to = garage_bucket.my_bucket
+  id = "my-bucket"
+}
+```
+
+An import by alias writes that alias to `global_alias`. An import by bucket ID writes the lexicographically first global alias of the bucket. If the bucket has no global alias, the import writes no alias. If `global_alias` in your configuration is a different alias of the bucket, the next apply removes the alias that the import wrote, so import the bucket with the alias in your configuration.
+
+The import also writes `expiration_days` and `website_access` to the state, so add them to your configuration. If you omit an attribute that the import wrote, the next plan shows its removal:
+
+- `global_alias`: the apply removes the alias. If it is the last alias of the bucket, the apply fails, see [Global Alias](#global-alias).
+- `expiration_days`: the apply removes the lifecycle policy.
+- `website_access`: the apply disables website hosting.
+
+The provider resolves a global alias to the bucket ID, so the resource ID in the state is always the bucket ID.
 
 ## Schema
 

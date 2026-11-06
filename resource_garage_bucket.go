@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"net/http"
+	"regexp"
 	"slices"
 	"strconv"
 
@@ -20,6 +22,9 @@ func resourceGarageBucket() *schema.Resource {
 		ReadContext:   resourceGarageBucketRead,
 		UpdateContext: resourceGarageBucketUpdate,
 		DeleteContext: resourceGarageBucketDelete,
+		Importer: &schema.ResourceImporter{
+			StateContext: resourceGarageBucketImport,
+		},
 		Schema: map[string]*schema.Schema{
 			"id": {
 				Type:        schema.TypeString,
@@ -190,6 +195,67 @@ func resourceGarageBucketRead(ctx context.Context, d *schema.ResourceData, m int
 	}
 
 	return nil
+}
+
+// bucketIDRegex matches a bucket ID. No global alias matches it, because S3
+// bucket names have at most 63 characters.
+var bucketIDRegex = regexp.MustCompile(`^[0-9a-f]{64}$`)
+
+// resourceGarageBucketImport accepts a bucket ID or a global alias.
+func resourceGarageBucketImport(ctx context.Context, d *schema.ResourceData, m interface{}) ([]*schema.ResourceData, error) {
+	idOrAlias := d.Id()
+
+	bucket, err := lookupBucket(ctx, m.(*GarageClient), idOrAlias)
+	if err != nil {
+		return nil, err
+	}
+
+	alias := idOrAlias
+	if idOrAlias == bucket.GetId() {
+		alias = ""
+		if aliases := bucket.GetGlobalAliases(); len(aliases) > 0 {
+			alias = aliases[0]
+		}
+	}
+
+	// A bucket can have more global aliases than the one that the provider
+	// manages, so state must identify that alias before the import reads the
+	// bucket.
+	if err := d.Set("global_alias", alias); err != nil {
+		return nil, err
+	}
+
+	d.SetId(bucket.GetId())
+	return []*schema.ResourceData{d}, nil
+}
+
+// lookupBucket returns the bucket that idOrAlias identifies, either by its ID
+// or by its global alias. A missing bucket is an error, because an import
+// cannot continue without the bucket.
+func lookupBucket(ctx context.Context, client *GarageClient, idOrAlias string) (*garage.GetBucketInfoResponse, error) {
+	req := client.Client.BucketAPI.GetBucketInfo(client.WithAuth(ctx))
+	notFound := fmt.Sprintf("no bucket has the global alias %q", idOrAlias)
+	if bucketIDRegex.MatchString(idOrAlias) {
+		req = req.Id(idOrAlias)
+		notFound = fmt.Sprintf("no bucket has the ID %q", idOrAlias)
+	} else {
+		req = req.GlobalAlias(idOrAlias)
+	}
+
+	bucket, resp, err := req.Execute()
+	defer func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	}()
+	if err != nil {
+		if resp != nil && resp.StatusCode == http.StatusNotFound {
+			return nil, errors.New(notFound)
+		}
+		return nil, fmt.Errorf("failed to read bucket %q: %w", idOrAlias, garageAPIError(err))
+	}
+
+	return bucket, nil
 }
 
 func resourceGarageBucketUpdate(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {

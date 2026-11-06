@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"regexp"
 	"slices"
+	"strings"
 	"testing"
 
 	garage "git.deuxfleurs.fr/garage-sdk/garage-admin-sdk-golang"
@@ -191,6 +192,123 @@ func TestAccGarageBucket_otherGlobalAliases(t *testing.T) {
 					resource.TestCheckResourceAttr("garage_bucket.test", "global_alias", configured),
 					testAccCheckGarageBucketGlobalAliases(t, &bucketID, other, configured),
 				),
+			},
+		},
+	})
+}
+
+func TestAccGarageBucket_import(t *testing.T) {
+	alias := acctest.RandomWithPrefix("acc-bucket-import")
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV5ProviderFactories: testAccProtoV5ProviderFactories,
+		CheckDestroy:             testAccCheckGarageBucketDestroy(t),
+		Steps: []resource.TestStep{
+			{
+				Config: testAccProviderConfig() + fmt.Sprintf(`
+resource "garage_bucket" "test" {
+  global_alias = %q
+
+  website_access {
+    enabled        = true
+    index_document = "index.html"
+    error_document = "error.html"
+  }
+}
+`, alias),
+			},
+			{
+				ResourceName:      "garage_bucket.test",
+				ImportState:       true,
+				ImportStateVerify: true,
+			},
+			{
+				// ImportStateVerify also compares the ID, so the alias must
+				// resolve to the ID of the bucket.
+				ResourceName:      "garage_bucket.test",
+				ImportState:       true,
+				ImportStateId:     alias,
+				ImportStateVerify: true,
+			},
+			{
+				ResourceName:  "garage_bucket.test",
+				ImportState:   true,
+				ImportStateId: alias + "-missing",
+				ExpectError:   regexp.MustCompile(`no bucket has the global alias`),
+			},
+			{
+				ResourceName:  "garage_bucket.test",
+				ImportState:   true,
+				ImportStateId: strings.Repeat("0", 64),
+				ExpectError:   regexp.MustCompile(`no bucket has the ID`),
+			},
+		},
+	})
+}
+
+// TestAccGarageBucket_importOtherGlobalAlias checks which global alias the
+// import writes to the state when the bucket has more than one.
+func TestAccGarageBucket_importOtherGlobalAlias(t *testing.T) {
+	prefix := "accb-" + acctest.RandString(8)
+	configured := prefix + "-configured"
+	// Garage sorts the aliases, so this one is first.
+	other := prefix + "-0other"
+	var bucketID string
+
+	checkImportedAlias := func(want string) resource.ImportStateCheckFunc {
+		return func(states []*terraform.InstanceState) error {
+			if len(states) != 1 {
+				return fmt.Errorf("got %d states, want 1", len(states))
+			}
+			state := states[0]
+			if state.ID != bucketID {
+				return fmt.Errorf("got bucket ID %q, want %q", state.ID, bucketID)
+			}
+			if got := state.Attributes["global_alias"]; got != want {
+				return fmt.Errorf("got global_alias %q, want %q", got, want)
+			}
+			return nil
+		}
+	}
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV5ProviderFactories: testAccProtoV5ProviderFactories,
+		CheckDestroy:             testAccCheckGarageBucketDestroy(t),
+		Steps: []resource.TestStep{
+			{
+				Config: testAccGarageBucketAliasConfig(configured),
+				Check:  testAccCheckGarageBucketID("garage_bucket.test", &bucketID),
+			},
+			{
+				PreConfig: func() {
+					if err := addBucketGlobalAlias(context.Background(), testAccClient(t), bucketID, other); err != nil {
+						t.Fatal(err)
+					}
+				},
+				Config:   testAccGarageBucketAliasConfig(configured),
+				PlanOnly: true,
+			},
+			// An import by alias keeps that alias, so the state matches the
+			// configuration.
+			{
+				ResourceName:      "garage_bucket.test",
+				ImportState:       true,
+				ImportStateId:     configured,
+				ImportStateVerify: true,
+			},
+			{
+				ResourceName:     "garage_bucket.test",
+				ImportState:      true,
+				ImportStateId:    other,
+				ImportStateCheck: checkImportedAlias(other),
+			},
+			// An import by bucket ID keeps the first alias.
+			{
+				ResourceName:     "garage_bucket.test",
+				ImportState:      true,
+				ImportStateCheck: checkImportedAlias(other),
 			},
 		},
 	})

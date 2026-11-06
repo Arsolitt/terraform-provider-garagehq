@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -35,6 +36,87 @@ func TestAccGarageBucketKey_basic(t *testing.T) {
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttr("garage_bucket_key.test", "write", "true"),
 				),
+			},
+		},
+	})
+}
+
+func TestAccGarageBucketKey_import(t *testing.T) {
+	name := acctest.RandomWithPrefix("acc-bucket-key-import")
+	config := testAccProviderConfig() + fmt.Sprintf(`
+resource "garage_bucket" "test" {
+  global_alias = %[1]q
+}
+
+resource "garage_key" "test" {
+  name = %[1]q
+}
+
+resource "garage_bucket_key" "test" {
+  bucket_id     = garage_bucket.test.id
+  access_key_id = garage_key.test.access_key_id
+  read          = true
+  write         = false
+  owner         = true
+}
+`, name)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV5ProviderFactories: testAccProtoV5ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: config,
+			},
+			{
+				ResourceName:      "garage_bucket_key.test",
+				ImportState:       true,
+				ImportStateVerify: true,
+			},
+			{
+				ResourceName: "garage_bucket_key.test",
+				ImportState:  true,
+				ImportStateIdFunc: func(s *terraform.State) (string, error) {
+					rs, ok := s.RootModule().Resources["garage_key.test"]
+					if !ok {
+						return "", fmt.Errorf("garage_key.test not found in state")
+					}
+					return name + "/" + rs.Primary.ID, nil
+				},
+				ImportStateVerify: true,
+			},
+			{
+				ResourceName:  "garage_bucket_key.test",
+				ImportState:   true,
+				ImportStateId: "no-separator",
+				ExpectError:   regexp.MustCompile(`expected <bucket>/<access_key_id>`),
+			},
+			{
+				ResourceName:  "garage_bucket_key.test",
+				ImportState:   true,
+				ImportStateId: name + "/GK000000000000000000000000",
+				ExpectError:   regexp.MustCompile(`failed to read key GK000000000000000000000000`),
+			},
+			{
+				ResourceName:  "garage_bucket_key.test",
+				ImportState:   true,
+				ImportStateId: name + "-missing/GK000000000000000000000000",
+				ExpectError:   regexp.MustCompile(`no bucket has the global alias`),
+			},
+			{
+				Config: config + `
+resource "garage_key" "other" {
+  name = "acc-key-no-permissions"
+}
+`,
+			},
+			{
+				ResourceName: "garage_bucket_key.test",
+				ImportState:  true,
+				ImportStateIdFunc: func(s *terraform.State) (string, error) {
+					return name + "/" + s.RootModule().Resources["garage_key.other"].Primary.ID, nil
+				},
+				ExpectError: regexp.MustCompile(`has no permissions on bucket`),
 			},
 		},
 	})

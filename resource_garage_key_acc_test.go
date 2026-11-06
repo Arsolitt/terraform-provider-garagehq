@@ -46,6 +46,32 @@ func TestAccGarageKey_basic(t *testing.T) {
 	})
 }
 
+func TestAccGarageKey_import(t *testing.T) {
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV5ProviderFactories: testAccProtoV5ProviderFactories,
+		CheckDestroy:             testAccCheckGarageKeyDestroy(t),
+		Steps: []resource.TestStep{
+			{
+				Config: testAccGarageKeyConfig(acctest.RandomWithPrefix("acc-key-import")),
+			},
+			{
+				// ImportStateVerify also compares secret_access_key, so the
+				// import must read the secret from Garage.
+				ResourceName:      "garage_key.test",
+				ImportState:       true,
+				ImportStateVerify: true,
+			},
+			{
+				ResourceName:  "garage_key.test",
+				ImportState:   true,
+				ImportStateId: "GK000000000000000000000000",
+				ExpectError:   regexp.MustCompile(`failed to read key GK000000000000000000000000`),
+			},
+		},
+	})
+}
+
 func TestAccGarageKey_importCredentials(t *testing.T) {
 	// Garage keeps a deleted key as a tombstone and refuses to import its ID
 	// again, so each run needs a new ID.
@@ -70,6 +96,11 @@ func TestAccGarageKey_importCredentials(t *testing.T) {
 			{
 				Config:   testAccGarageKeyImportConfig(name, accessKeyID, secretAccessKey),
 				PlanOnly: true,
+			},
+			{
+				ResourceName:      "garage_key.test",
+				ImportState:       true,
+				ImportStateVerify: true,
 			},
 			{
 				Config: testAccGarageKeyImportConfig(name+"-renamed", accessKeyID, secretAccessKey),
