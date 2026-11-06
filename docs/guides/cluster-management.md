@@ -269,6 +269,8 @@ Remove the node from the `roles` block. The provider removes the node from the l
 
 The provider removes only the nodes that were in `roles` before. It does not remove a node that the configuration never managed.
 
+~> **Warning** `terraform import` writes all roles of the layout to the state. Thus all nodes count as managed after an import. When the configuration lists only some of the nodes, the next apply removes the other nodes from the layout.
+
 ### Changing Capacity
 
 Update the `capacity` value. Garage will rebalance data accordingly.

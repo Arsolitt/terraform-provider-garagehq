@@ -130,6 +130,8 @@ Cluster layout is a singleton resource and is imported as `cluster-layout`:
 terraform import garage_cluster_layout.main cluster-layout
 ```
 
+~> **Warning** Import writes all roles of the layout to the state. When the configuration lists only some of the nodes, the next apply removes the other nodes from the layout. Make sure that `roles` lists all nodes before you apply.
+
 ## Schema
 
 ### Required
