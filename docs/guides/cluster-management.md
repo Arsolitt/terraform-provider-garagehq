@@ -18,12 +18,14 @@ The cluster layout defines:
 
 ## Single Node Setup (Development)
 
-For local development or testing, a single-node layout is sufficient:
+For local development or testing, a single-node layout is sufficient. The [`garage_node`](../data-sources/node.md) data source gives the ID of the node that serves the admin API:
 
 ```hcl
+data "garage_node" "self" {}
+
 resource "garage_cluster_layout" "dev" {
   roles {
-    id       = var.node_id  # From garage node config
+    id       = data.garage_node.self.id
     zone     = "local"
     capacity = "1G"
     tags     = ["dev", "local"]
@@ -34,14 +36,11 @@ resource "garage_cluster_layout" "dev" {
 ### Complete Development Example
 
 ```hcl
-variable "node_id" {
-  description = "Garage node ID from configuration"
-  type        = string
-}
+data "garage_node" "self" {}
 
 resource "garage_cluster_layout" "development" {
   roles {
-    id       = var.node_id
+    id       = data.garage_node.self.id
     zone     = "dev"
     capacity = "10G"
     tags     = ["development", "standalone"]
@@ -68,18 +67,24 @@ resource "garage_bucket_key" "dev_access" {
 
 ### Finding Your Node ID
 
-The node ID is set in your Garage configuration:
+The node ID is the public key of the node. Garage makes it on the first start and keeps it in the metadata directory (`node_key.pub`), so you cannot set it in `garage.toml`.
 
-```toml
-# garage.toml
-metadata_dir = "/var/lib/garage/meta"
-data_dir = "/var/lib/garage/data"
+The `garage_node` data source reads it from the cluster. Without `id`, it reads the node that serves the admin API; with `id`, it reads another node:
 
-[consul_discovery]
-# or use static configuration
+```hcl
+data "garage_node" "self" {}
+
+output "node" {
+  value = {
+    id       = data.garage_node.self.id
+    hostname = data.garage_node.self.hostname
+    is_up    = data.garage_node.self.is_up
+    zone     = data.garage_node.self.zone
+  }
+}
 ```
 
-Or get it from the cluster status:
+On the node, `garage node id` also shows it. Or get the IDs of all nodes from the cluster status:
 
 ```bash
 curl -H "Authorization: Bearer $ADMIN_TOKEN" \

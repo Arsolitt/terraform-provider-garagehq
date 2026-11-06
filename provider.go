@@ -36,6 +36,9 @@ func Provider() *schema.Provider {
 			"garage_admin_token":    resourceGarageAdminToken(),
 			"garage_cluster_layout": resourceGarageClusterLayout(),
 		},
+		DataSourcesMap: map[string]*schema.Resource{
+			"garage_node": dataSourceGarageNode(),
+		},
 		ConfigureContextFunc: providerConfigure,
 	}
 }

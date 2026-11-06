@@ -67,6 +67,12 @@ provider "garage" {
 | [`garage_admin_token`](resources/admin_token.md) | Create admin API tokens with restricted scopes |
 | [`garage_cluster_layout`](resources/cluster_layout.md) | Manage cluster node layout and capacity |
 
+## Data Sources
+
+| Data Source | Description |
+|-------------|-------------|
+| [`garage_node`](data-sources/node.md) | Read a node ID, status and role |
+
 ## Getting Started
 
 See the [Getting Started Guide](guides/getting-started.md) for a complete walkthrough.

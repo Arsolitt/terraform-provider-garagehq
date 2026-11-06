@@ -96,6 +96,6 @@ if [ "$ready" != true ]; then
 fi
 
 node_id="$(garage node id -q | cut -d@ -f1)"
-garage layout assign -z dc1 -c 1G "$node_id" >/dev/null
+garage layout assign "$node_id" -z dc1 -c 1G -t acc-a -t acc-b >/dev/null
 garage layout apply --version 1 >/dev/null
 echo "$node_id"

@@ -21,6 +21,12 @@ A Terraform provider for [Garage](https://garagehq.deuxfleurs.fr/) object storag
 | `garage_admin_token` | Scoped admin API tokens |
 | `garage_cluster_layout` | Cluster topology management |
 
+## Data Sources
+
+| Data Source | Description |
+|-------------|-------------|
+| `garage_node` | Node ID, status and role, for example of the node that serves the admin API |
+
 ## Quick Start
 
 ```hcl
@@ -193,13 +199,12 @@ resource "garage_admin_token" "prometheus" {
 ### Single Node Development Cluster
 
 ```hcl
-variable "node_id" {
-  type = string
-}
+# The node that serves the admin API
+data "garage_node" "self" {}
 
 resource "garage_cluster_layout" "dev" {
   roles {
-    id       = var.node_id
+    id       = data.garage_node.self.id
     zone     = "local"
     capacity = "10G"
     tags     = ["dev", "standalone"]
