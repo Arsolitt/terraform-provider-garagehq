@@ -130,6 +130,8 @@ Cluster layout is a singleton resource and is imported as `cluster-layout`:
 terraform import garage_cluster_layout.main cluster-layout
 ```
 
+~> **Warning** Import writes all roles of the layout to the state. When the configuration lists only some of the nodes, the next apply removes the other nodes from the layout. Make sure that `roles` lists all nodes before you apply.
+
 ## Schema
 
 ### Required
@@ -172,12 +174,18 @@ resource "garage_cluster_layout" "example" {
 
 ## Important Considerations
 
-1. **Layout Changes**: Changes to the layout are applied immediately. Ensure you have proper change management procedures.
+1. **Layout Changes**: Changes to the layout are applied immediately. Ensure you have proper change management procedures. The provider stages only the roles that are different from the current layout, and applies a new layout version only when it staged a change.
 
-2. **Node IDs**: The node ID must match the ID configured in the Garage node's configuration file.
+2. **Staged Changes**: When a role must change, the provider refuses to continue if the layout has staged changes that are not applied, for example from `garage layout assign`, because the apply would also apply them. Apply or revert them first (`garage layout apply` or `garage layout revert`). When no role must change, the provider applies nothing, thus staged changes do not stop it. When Garage refuses to apply the layout, the provider reverts the changes that it staged.
 
-3. **Gateway Nodes**: Nodes without a `capacity` attribute operate as gateways, routing requests but not storing data.
+3. **Managed Nodes**: The resource manages only the nodes in `roles`. It does not change or remove the role of a node that is not in `roles`, and that node is not in the state. When you remove a node from `roles`, the provider removes the node from the layout. When a managed node leaves the layout outside Terraform, the next plan adds it again.
 
-4. **Zone Replication**: Data is replicated across zones. Ensure you have nodes in at least 3 zones for production deployments.
+4. **Destroy**: `terraform destroy` removes the resource only from the state. The roles of the nodes stay in the layout, and the provider does not revert staged changes. To remove a node from the layout, remove it from `roles` and apply.
 
-5. **Capacity Planning**: Total cluster capacity should account for replication factor and desired redundancy.
+5. **Node IDs**: The node ID must match the ID configured in the Garage node's configuration file.
+
+6. **Gateway Nodes**: Nodes without a `capacity` attribute operate as gateways, routing requests but not storing data.
+
+7. **Zone Replication**: Data is replicated across zones. Ensure you have nodes in at least 3 zones for production deployments.
+
+8. **Capacity Planning**: Total cluster capacity should account for replication factor and desired redundancy.

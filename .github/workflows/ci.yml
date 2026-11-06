@@ -78,6 +78,8 @@ jobs:
 
       - name: Run acceptance tests
         run: make testacc
+        env:
+          GARAGE_ACC_DISPOSABLE: "1"
 
   lint:
     name: Lint

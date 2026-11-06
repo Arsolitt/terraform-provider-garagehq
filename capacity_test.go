@@ -74,3 +74,26 @@ func TestFormatCapacity(t *testing.T) {
 		})
 	}
 }
+
+func TestFormatCapacityExact(t *testing.T) {
+	tests := []struct {
+		input    int64
+		expected string
+	}{
+		{0, "0"},
+		{500, "500"},
+		{1024 * 1024 * 1024, "1G"},
+		{500 * 1024 * 1024, "500M"},
+		{1536 * 1024 * 1024, "1.50G"},
+		{1000000000, "1000000000"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.expected, func(t *testing.T) {
+			result := formatCapacityExact(tt.input)
+			if result != tt.expected {
+				t.Errorf("formatCapacityExact(%d) = %q, expected %q", tt.input, result, tt.expected)
+			}
+		})
+	}
+}

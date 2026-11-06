@@ -242,6 +242,8 @@ resource "garage_cluster_layout" "production" {
 }
 ```
 
+The `garage_cluster_layout` resource manages only the nodes in `roles`. When you remove a node from `roles`, the provider removes the node from the layout. `terraform destroy` removes the resource only from the state, and the layout does not change.
+
 ## Provider Configuration
 
 ### Static Credentials

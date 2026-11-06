@@ -265,11 +265,23 @@ resource "garage_cluster_layout" "production" {
 
 ### Removing Nodes
 
-Simply remove the node from the `roles` block. Data will be redistributed to remaining nodes.
+Remove the node from the `roles` block. The provider removes the node from the layout and applies a new layout version. Garage then moves the data of the node to the remaining nodes.
+
+The provider removes only the nodes that were in `roles` before. It does not remove a node that the configuration never managed.
+
+~> **Warning** `terraform import` writes all roles of the layout to the state. Thus all nodes count as managed after an import. When the configuration lists only some of the nodes, the next apply removes the other nodes from the layout.
 
 ### Changing Capacity
 
 Update the `capacity` value. Garage will rebalance data accordingly.
+
+### Staged Changes
+
+The provider stages only the roles that are different from the current layout, and applies a new layout version only when it staged a change. When a role must change, it refuses to continue if the layout has staged changes that are not applied, for example from `garage layout assign`, because the apply would also apply them. Apply or revert them first with `garage layout apply` or `garage layout revert`. When no role must change, the provider applies nothing, thus staged changes do not stop it.
+
+### Destroying the Layout Resource
+
+`terraform destroy` removes the `garage_cluster_layout` resource only from the state. The layout does not change, thus the cluster continues to operate. The provider also keeps the staged changes, because they can come from other tools.
 
 ## Monitoring Layout
 
