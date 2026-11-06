@@ -153,7 +153,11 @@ func garageSelfNodeID(ctx context.Context, client *GarageClient) (string, error)
 		}
 	}()
 
-	for _, node := range info.GetSuccess() {
+	success := info.GetSuccess()
+	if len(success) > 1 {
+		return "", fmt.Errorf("expected one node for \"self\", got %d", len(success))
+	}
+	for _, node := range success {
 		return node.GetNodeId(), nil
 	}
 	for id, msg := range info.GetError() {

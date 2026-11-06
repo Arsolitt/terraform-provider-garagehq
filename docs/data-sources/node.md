@@ -42,7 +42,7 @@ output "storage_2_is_up" {
 
 ### Optional
 
-- `id` (String) - Node ID (64 lowercase hexadecimal characters). Defaults to the ID of the node that serves the admin API.
+- `id` (String) - Node ID (64 lowercase hexadecimal characters). Omit it to read the node that serves the admin API: an empty `id = ""` is rejected by validation.
 
 ### Read-Only
 
@@ -56,5 +56,7 @@ output "storage_2_is_up" {
 - `tags` (List of String) - Tags of the node in the current layout
 
 The node must be known to the cluster: connected, or in the layout. Else the read fails.
+
+For a node that is in the layout but has never connected, `hostname`, `address` and `garage_version` are empty: the admin API fills defaults for layout-only entries. The `zone`, `capacity` and `tags` of such a node still come from the layout.
 
 `capacity` uses a unit suffix only when it gives the exact value (`1G` is 1073741824 bytes). Else it is a plain number of bytes, for example `1000000000` for a capacity that `garage layout assign -c 1G` set.

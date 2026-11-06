@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"regexp"
 	"strings"
 	"testing"
@@ -142,5 +144,76 @@ func testAccCheckGarageNodeIsSelf(t *testing.T, name string) resource.TestCheckF
 			return nil
 		}
 		return fmt.Errorf("node %s has no role in the layout", id)
+	}
+}
+
+func TestGarageSelfNodeID(t *testing.T) {
+	const (
+		selfID  = "1111111111111111111111111111111111111111111111111111111111111111"
+		otherID = "2222222222222222222222222222222222222222222222222222222222222222"
+	)
+	nodeInfo := func(id string) string {
+		return `{"dbEngine":"lmdb","garageVersion":"v2.3.0","nodeId":"` + id + `","rustVersion":"1.90.0"}`
+	}
+
+	tests := []struct {
+		name    string
+		body    string
+		want    string
+		wantErr string
+	}{
+		{
+			name: "one node",
+			body: `{"success":{"` + selfID + `":` + nodeInfo(selfID) + `},"error":{}}`,
+			want: selfID,
+		},
+		{
+			name:    "multiple nodes",
+			body:    `{"success":{"` + selfID + `":` + nodeInfo(selfID) + `,"` + otherID + `":` + nodeInfo(otherID) + `},"error":{}}`,
+			wantErr: `expected one node for "self", got 2`,
+		},
+		{
+			name:    "node error",
+			body:    `{"success":{},"error":{"` + otherID + `":"node is not available"}}`,
+			wantErr: "failed to get node info of " + otherID + ": node is not available",
+		},
+		{
+			name:    "empty response",
+			body:    `{"success":{},"error":{}}`,
+			wantErr: "failed to get node info: empty response",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			body := tt.body
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/v2/GetNodeInfo" || r.URL.Query().Get("node") != "self" {
+					t.Errorf("unexpected request: %s %s", r.Method, r.URL)
+				}
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(body))
+			}))
+			defer srv.Close()
+
+			client, err := NewGarageClient("http", strings.TrimPrefix(srv.URL, "http://"), "test-token")
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			got, err := garageSelfNodeID(context.Background(), client)
+			if tt.wantErr != "" {
+				if err == nil || err.Error() != tt.wantErr {
+					t.Fatalf("error = %v, want %q", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tt.want {
+				t.Errorf("id = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }
