@@ -136,7 +136,7 @@ func resourceGarageAdminTokenCreate(ctx context.Context, d *schema.ResourceData,
 	}
 	// Garage returns a null expiration for a token that never expires.
 	expiration := ""
-	if t, ok := token.GetExpirationOk(); ok && t != nil {
+	if t, _ := token.GetExpirationOk(); t != nil {
 		expiration = t.Format(time.RFC3339)
 	}
 	if err := d.Set("expiration", expiration); err != nil {
@@ -185,7 +185,7 @@ func resourceGarageAdminTokenRead(ctx context.Context, d *schema.ResourceData, m
 	}
 	// Garage returns a null expiration for a token that never expires.
 	expiration := ""
-	if t, ok := token.GetExpirationOk(); ok && t != nil {
+	if t, _ := token.GetExpirationOk(); t != nil {
 		expiration = t.Format(time.RFC3339)
 	}
 	if err := d.Set("expiration", expiration); err != nil {
