@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.3.1](https://github.com/Arsolitt/terraform-provider-garagehq/compare/v1.3.0...v1.3.1) (2026-11-06)
+
+
+### Bug Fixes
+
+* **bucket_key:** drop the resource when its bucket is gone ([1e29a3f](https://github.com/Arsolitt/terraform-provider-garagehq/commit/1e29a3f2811130c60b679450e0a95b7b357f265a))
+* **bucket_key:** remove permissions on update ([4872180](https://github.com/Arsolitt/terraform-provider-garagehq/commit/4872180d0559733f256530dd9cd6fac088aa154b))
+* **bucket_key:** remove permissions on update ([f387708](https://github.com/Arsolitt/terraform-provider-garagehq/commit/f3877083c5ec51c5c0b4f06e9209528f6ef74d07))
+* **deps:** bump x/net to 0.62.0 past CVE-2026-78661 ([ce48783](https://github.com/Arsolitt/terraform-provider-garagehq/commit/ce48783bd2c6c6e922137e5482e537a6aa50e810))
+
 ## [1.3.0](https://github.com/Arsolitt/terraform-provider-garagehq/compare/v1.2.1...v1.3.0) (2026-11-06)
 
 
