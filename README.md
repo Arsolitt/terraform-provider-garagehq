@@ -247,7 +247,7 @@ resource "garage_cluster_layout" "production" {
 }
 ```
 
-The `garage_cluster_layout` resource manages only the nodes in `roles`. When you remove a node from `roles`, the provider removes the node from the layout. `terraform destroy` removes the resource only from the state, and the layout does not change.
+The `garage_cluster_layout` resource manages only the nodes in `roles`. When you remove a node from `roles`, the provider removes the node from the layout. `terraform destroy` removes the resource only from the state, and the layout does not change. Importing the layout writes every node of the layout to the state, so list all nodes in `roles` before you apply after an import.
 
 ## Provider Configuration
 
@@ -360,7 +360,7 @@ Verify your admin token has the required permissions. Some operations require sp
 
 ### Secret Key Not Available
 
-The `secret_access_key` is only available on initial creation. If you need to recover it, you'll need to recreate the key. To keep the credentials under your control, set `access_key_id` and `secret_access_key` on `garage_key` yourself.
+The provider records `secret_access_key` only at create time, so keep it in your secrets manager. Garage keeps the secret too and can show it with `garage key info --show-secret`. Do not recreate a key to recover its secret: with a configured `access_key_id`, the provider deletes the key and Garage refuses to import that ID again. To manage the credentials yourself, set `access_key_id` and `secret_access_key` together on a new key.
 
 ### Lifecycle Policy Not Working
 
