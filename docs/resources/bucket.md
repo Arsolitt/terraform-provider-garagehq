@@ -100,11 +100,12 @@ import {
 
 An import by alias writes that alias to `global_alias`. An import by bucket ID writes the lexicographically first global alias of the bucket. If the bucket has no global alias, the import writes no alias. If `global_alias` in your configuration is a different alias of the bucket, the next apply removes the alias that the import wrote, so import the bucket with the alias in your configuration.
 
-The import also writes `expiration_days` and `website_access` to the state, so add them to your configuration. If you omit an attribute that the import wrote, the next plan shows its removal:
+The import also writes `expiration_days`, `website_access`, `max_size` and `max_objects` to the state, so add them to your configuration. If you omit an attribute that the import wrote, the next plan shows its removal:
 
 - `global_alias`: the apply removes the alias. If it is the last alias of the bucket, the apply fails, see [Global Alias](#global-alias).
 - `expiration_days`: the apply removes the lifecycle policy.
 - `website_access`: the apply disables website hosting.
+- `max_size`, `max_objects`: the apply removes the quotas, see [Quotas](#quotas).
 
 The provider resolves a global alias to the bucket ID, so the resource ID in the state is always the bucket ID.
 

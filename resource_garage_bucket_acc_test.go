@@ -483,6 +483,46 @@ func TestAccGarageBucket_quotas(t *testing.T) {
 	})
 }
 
+// TestAccGarageBucket_quotasKeepOtherSettings checks that a quota update does
+// not clear the website access of the bucket.
+func TestAccGarageBucket_quotasKeepOtherSettings(t *testing.T) {
+	alias := "accb-" + acctest.RandString(8) + "-quotas-keep"
+	config := func(maxSize int) string {
+		return testAccProviderConfig() + fmt.Sprintf(`
+resource "garage_bucket" "test" {
+  global_alias = %q
+  max_size     = %d
+  max_objects  = 10
+
+  website_access {
+    enabled        = true
+    index_document = "index.html"
+  }
+}
+`, alias, maxSize)
+	}
+	check := func(maxSize int) resource.TestCheckFunc {
+		return resource.ComposeAggregateTestCheckFunc(
+			resource.TestCheckResourceAttr("garage_bucket.test", "max_size", fmt.Sprint(maxSize)),
+			resource.TestCheckResourceAttr("garage_bucket.test", "max_objects", "10"),
+			resource.TestCheckResourceAttr("garage_bucket.test", "website_access.0.enabled", "true"),
+			testAccCheckGarageBucketQuotas(t, "garage_bucket.test", int64(maxSize), 10),
+			testAccCheckGarageBucketWebsite(t, "garage_bucket.test", true),
+		)
+	}
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV5ProviderFactories: testAccProtoV5ProviderFactories,
+		CheckDestroy:             testAccCheckGarageBucketDestroy(t),
+		Steps: []resource.TestStep{
+			{Config: config(1048576), Check: check(1048576)},
+			{Config: config(2097152), Check: check(2097152)},
+			{Config: config(2097152), PlanOnly: true},
+		},
+	})
+}
+
 func testAccGarageBucketQuotasConfig(alias, quotas string) string {
 	return testAccProviderConfig() + fmt.Sprintf(`
 resource "garage_bucket" "test" {
@@ -525,6 +565,31 @@ func testAccCheckGarageBucketQuotas(t *testing.T, name string, maxSize, maxObjec
 			case q.want != 0 && *q.got != q.want:
 				return fmt.Errorf("bucket %s has %s %d, want %d", rs.Primary.ID, q.name, *q.got, q.want)
 			}
+		}
+		return nil
+	}
+}
+
+// testAccCheckGarageBucketWebsite checks the website access of a bucket in
+// Garage itself.
+func testAccCheckGarageBucketWebsite(t *testing.T, name string, want bool) resource.TestCheckFunc {
+	return func(s *terraform.State) error {
+		rs, ok := s.RootModule().Resources[name]
+		if !ok {
+			return fmt.Errorf("resource %s not found", name)
+		}
+		client := testAccClient(t)
+		bucket, resp, err := client.Client.BucketAPI.GetBucketInfo(client.WithAuth(context.Background())).Id(rs.Primary.ID).Execute()
+		defer func() {
+			if resp != nil && resp.Body != nil {
+				_ = resp.Body.Close()
+			}
+		}()
+		if err != nil {
+			return fmt.Errorf("failed to read bucket %s: %w", rs.Primary.ID, err)
+		}
+		if got := bucket.GetWebsiteAccess(); got != want {
+			return fmt.Errorf("bucket %s website access is %t, want %t", rs.Primary.ID, got, want)
 		}
 		return nil
 	}
