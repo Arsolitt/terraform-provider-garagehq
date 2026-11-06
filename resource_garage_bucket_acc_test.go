@@ -490,9 +490,10 @@ func TestAccGarageBucket_quotasKeepOtherSettings(t *testing.T) {
 	config := func(maxSize int) string {
 		return testAccProviderConfig() + fmt.Sprintf(`
 resource "garage_bucket" "test" {
-  global_alias = %q
-  max_size     = %d
-  max_objects  = 10
+  global_alias    = %q
+  max_size        = %d
+  max_objects     = 10
+  expiration_days = 7
 
   website_access {
     enabled        = true
@@ -505,8 +506,10 @@ resource "garage_bucket" "test" {
 		return resource.ComposeAggregateTestCheckFunc(
 			resource.TestCheckResourceAttr("garage_bucket.test", "max_size", fmt.Sprint(maxSize)),
 			resource.TestCheckResourceAttr("garage_bucket.test", "max_objects", "10"),
+			resource.TestCheckResourceAttr("garage_bucket.test", "expiration_days", "7"),
 			resource.TestCheckResourceAttr("garage_bucket.test", "website_access.0.enabled", "true"),
 			testAccCheckGarageBucketQuotas(t, "garage_bucket.test", int64(maxSize), 10),
+			testAccCheckGarageBucketExpirationDays(t, "garage_bucket.test", 7),
 			testAccCheckGarageBucketWebsite(t, "garage_bucket.test", true),
 		)
 	}
@@ -519,6 +522,51 @@ resource "garage_bucket" "test" {
 			{Config: config(1048576), Check: check(1048576)},
 			{Config: config(2097152), Check: check(2097152)},
 			{Config: config(2097152), PlanOnly: true},
+		},
+	})
+}
+
+func TestAccGarageBucket_lifecycle(t *testing.T) {
+	alias := "accb-" + acctest.RandString(8) + "-lifecycle"
+	config := func(expiration string) string {
+		attribute := ""
+		if expiration != "" {
+			attribute = "expiration_days = " + expiration
+		}
+		return testAccProviderConfig() + fmt.Sprintf(`
+resource "garage_bucket" "test" {
+  global_alias = %q
+  %s
+}
+`, alias, attribute)
+	}
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV5ProviderFactories: testAccProtoV5ProviderFactories,
+		CheckDestroy:             testAccCheckGarageBucketDestroy(t),
+		Steps: []resource.TestStep{
+			{
+				Config: config("7"),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("garage_bucket.test", "expiration_days", "7"),
+					testAccCheckGarageBucketExpirationDays(t, "garage_bucket.test", 7),
+				),
+			},
+			{
+				Config: config("14"),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("garage_bucket.test", "expiration_days", "14"),
+					testAccCheckGarageBucketExpirationDays(t, "garage_bucket.test", 14),
+				),
+			},
+			{
+				Config: config(""),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("garage_bucket.test", "expiration_days", "0"),
+					testAccCheckGarageBucketExpirationDays(t, "garage_bucket.test", 0),
+				),
+			},
 		},
 	})
 }
@@ -590,6 +638,31 @@ func testAccCheckGarageBucketWebsite(t *testing.T, name string, want bool) resou
 		}
 		if got := bucket.GetWebsiteAccess(); got != want {
 			return fmt.Errorf("bucket %s website access is %t, want %t", rs.Primary.ID, got, want)
+		}
+		return nil
+	}
+}
+
+// testAccCheckGarageBucketExpirationDays checks the lifecycle rules in Garage
+// itself, not only in the state.
+func testAccCheckGarageBucketExpirationDays(t *testing.T, name string, want int) resource.TestCheckFunc {
+	return func(s *terraform.State) error {
+		rs, ok := s.RootModule().Resources[name]
+		if !ok {
+			return fmt.Errorf("resource %s not found", name)
+		}
+		client := testAccClient(t)
+		bucket, resp, err := client.Client.BucketAPI.GetBucketInfo(client.WithAuth(context.Background())).Id(rs.Primary.ID).Execute()
+		defer func() {
+			if resp != nil && resp.Body != nil {
+				_ = resp.Body.Close()
+			}
+		}()
+		if err != nil {
+			return fmt.Errorf("failed to read bucket %s: %w", rs.Primary.ID, err)
+		}
+		if got := lifecycleExpirationDays(bucket.GetLifecycleRules()); got != want {
+			return fmt.Errorf("bucket %s expires after %d days, want %d", rs.Primary.ID, got, want)
 		}
 		return nil
 	}

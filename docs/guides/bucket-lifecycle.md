@@ -103,7 +103,7 @@ resource "garage_bucket" "permanent_storage" {
 
 ## How It Works
 
-The provider configures an S3 lifecycle rule with the following XML structure:
+The provider configures a Garage lifecycle rule equivalent to the following S3 XML structure:
 
 ```xml
 <LifecycleConfiguration>
@@ -120,7 +120,7 @@ The provider configures an S3 lifecycle rule with the following XML structure:
 </LifecycleConfiguration>
 ```
 
--> **Note** Lifecycle rules use the S3 API endpoint (port 3900 by default), not the Admin API. The provider handles the port switching automatically.
+-> **Note** Lifecycle rules are configured through the Garage admin API (`UpdateBucket` and `GetBucketInfo`); the S3 endpoint is not required.
 
 ## Considerations
 

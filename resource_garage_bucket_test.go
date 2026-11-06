@@ -2,12 +2,14 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
+	garage "git.deuxfleurs.fr/garage-sdk/garage-admin-sdk-golang"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
 )
 
@@ -234,5 +236,103 @@ func TestBucketUpdateQuotaFailure(t *testing.T) {
 	}
 	if v := got.Attributes["max_objects"]; v != "10" {
 		t.Errorf("max_objects in state = %q, want 10", v)
+	}
+}
+
+func TestLifecycleExpirationDays(t *testing.T) {
+	rule := func(days int64) garage.LifecycleRule {
+		expiration := garage.NewLifecycleExpiration()
+		expiration.SetDays(days)
+		r := garage.NewLifecycleRule("Enabled")
+		r.SetExpiration(*expiration)
+		return *r
+	}
+	tests := []struct {
+		name  string
+		rules []garage.LifecycleRule
+		want  int
+	}{
+		{"no rules", nil, 0},
+		{"no expiration", []garage.LifecycleRule{*garage.NewLifecycleRule("Enabled")}, 0},
+		{"expiration", []garage.LifecycleRule{rule(7)}, 7},
+		{"second rule", []garage.LifecycleRule{*garage.NewLifecycleRule("Enabled"), rule(14)}, 14},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := lifecycleExpirationDays(tc.rules); got != tc.want {
+				t.Errorf("lifecycleExpirationDays() = %d, want %d", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestSetBucketLifecyclePolicy(t *testing.T) {
+	tests := []struct {
+		name      string
+		days      int
+		wantRules int
+		wantDays  int64
+	}{
+		{"set", 7, 1, 7},
+		{"clear", 0, 0, 0},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var got string
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/v2/UpdateBucket" || r.URL.Query().Get("id") != "bucket-id" {
+					t.Errorf("unexpected request: %s %s", r.Method, r.URL)
+				}
+				body, err := io.ReadAll(r.Body)
+				if err != nil {
+					t.Errorf("read request body: %v", err)
+				}
+				got = strings.TrimSpace(string(body))
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{
+					"id": "bucket-id", "created": "2026-01-01T00:00:00Z", "globalAliases": [],
+					"websiteAccess": false, "keys": [], "objects": 0, "bytes": 0,
+					"unfinishedUploads": 0, "unfinishedMultipartUploads": 0,
+					"unfinishedMultipartUploadParts": 0, "unfinishedMultipartUploadBytes": 0,
+					"quotas": {"maxSize": null, "maxObjects": null}
+				}`))
+			}))
+			defer srv.Close()
+
+			client, err := NewGarageClient("http", strings.TrimPrefix(srv.URL, "http://"), "test-token")
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if err := setBucketLifecyclePolicy(context.Background(), client, "bucket-id", tc.days); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			var raw map[string]json.RawMessage
+			if err := json.Unmarshal([]byte(got), &raw); err != nil {
+				t.Fatalf("invalid request body %q: %v", got, err)
+			}
+			rulesJSON, ok := raw["lifecycleRules"]
+			if !ok {
+				t.Fatalf("request body %q has no lifecycleRules", got)
+			}
+			var rules []garage.LifecycleRule
+			if err := json.Unmarshal(rulesJSON, &rules); err != nil {
+				t.Fatalf("invalid lifecycleRules: %v", err)
+			}
+			if len(rules) != tc.wantRules {
+				t.Fatalf("got %d lifecycle rules, want %d", len(rules), tc.wantRules)
+			}
+			if tc.wantRules == 0 {
+				return
+			}
+			expiration, ok := rules[0].GetExpirationOk()
+			if !ok || expiration == nil {
+				t.Fatalf("rule has no expiration")
+			}
+			days, ok := expiration.GetDaysOk()
+			if !ok || days == nil || *days != tc.wantDays {
+				t.Errorf("got expiration days %v, want %d", days, tc.wantDays)
+			}
+		})
 	}
 }

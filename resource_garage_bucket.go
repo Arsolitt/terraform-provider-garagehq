@@ -1,15 +1,12 @@
 package main
 
 import (
-	"bytes"
 	"context"
-	"encoding/xml"
 	"errors"
 	"fmt"
 	"net/http"
 	"regexp"
 	"slices"
-	"strconv"
 
 	garage "git.deuxfleurs.fr/garage-sdk/garage-admin-sdk-golang"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
@@ -191,17 +188,8 @@ func resourceGarageBucketRead(ctx context.Context, d *schema.ResourceData, m int
 		return diag.FromErr(err)
 	}
 
-	// Read expiration policy if it exists
-	expirationDays, err := getBucketLifecyclePolicy(ctx, client, bucket.GetId())
-	if err == nil && expirationDays > 0 {
-		if err := d.Set("expiration_days", expirationDays); err != nil {
-			return diag.FromErr(err)
-		}
-	} else if d.HasChange("expiration_days") {
-		// If expiration_days was removed, clear it
-		if err := d.Set("expiration_days", 0); err != nil {
-			return diag.FromErr(err)
-		}
+	if err := d.Set("expiration_days", lifecycleExpirationDays(bucket.GetLifecycleRules())); err != nil {
+		return diag.FromErr(err)
 	}
 
 	// Read website access configuration
@@ -314,15 +302,9 @@ func resourceGarageBucketUpdate(ctx context.Context, d *schema.ResourceData, m i
 	// Handle expiration policy changes
 	if d.HasChange("expiration_days") {
 		expirationDays := d.Get("expiration_days").(int)
-		if expirationDays > 0 {
-			if err := setBucketLifecyclePolicy(ctx, client, bucketID, expirationDays); err != nil {
-				return diag.FromErr(fmt.Errorf("failed to update expiration policy: %w", err))
-			}
-		} else {
-			// Remove lifecycle policy if expiration_days is 0 or removed
-			if err := deleteBucketLifecyclePolicy(ctx, client, bucketID); err != nil {
-				return diag.FromErr(fmt.Errorf("failed to remove expiration policy: %w", err))
-			}
+		if err := setBucketLifecyclePolicy(ctx, client, bucketID, expirationDays); err != nil {
+			d.Partial(true)
+			return diag.FromErr(fmt.Errorf("failed to update expiration policy: %w", err))
 		}
 	}
 
@@ -542,240 +524,47 @@ func setBucketQuotas(ctx context.Context, client *GarageClient, bucketID string,
 	return nil
 }
 
-// S3 Lifecycle Configuration structures
-type LifecycleConfiguration struct {
-	XMLName xml.Name `xml:"LifecycleConfiguration"`
-	Rules   []Rule   `xml:"Rule"`
-}
-
-type Rule struct {
-	ID         string      `xml:"ID"`
-	Status     string      `xml:"Status"`
-	Filter     *Filter     `xml:"Filter,omitempty"`
-	Expiration *Expiration `xml:"Expiration,omitempty"`
-}
-
-type Filter struct {
-	Prefix string `xml:"Prefix"`
-}
-
-type Expiration struct {
-	Days int `xml:"Days"`
-}
-
-// setBucketLifecyclePolicy sets the lifecycle expiration policy for a bucket using S3-compatible API
+// setBucketLifecyclePolicy replaces the lifecycle rules of a bucket with one
+// expiration rule. A zero expiration removes all lifecycle rules.
 func setBucketLifecyclePolicy(ctx context.Context, client *GarageClient, bucketID string, expirationDays int) error {
-	// Get bucket info to find the bucket alias/name
-	bucket, resp, err := client.Client.BucketAPI.GetBucketInfo(client.WithAuth(ctx)).Id(bucketID).Execute()
-	if err != nil {
-		return fmt.Errorf("failed to get bucket info: %w", err)
+	rules := []garage.LifecycleRule{}
+	if expirationDays > 0 {
+		expiration := garage.NewLifecycleExpiration()
+		expiration.SetDays(int64(expirationDays))
+		rule := garage.NewLifecycleRule("Enabled")
+		rule.SetID("expire-after-days")
+		rule.SetExpiration(*expiration)
+		rules = append(rules, *rule)
 	}
+
+	req := garage.NewUpdateBucketRequestBody()
+	req.SetLifecycleRules(rules)
+
+	_, resp, err := client.Client.BucketAPI.UpdateBucket(client.WithAuth(ctx)).Id(bucketID).UpdateBucketRequestBody(*req).Execute()
 	defer func() {
 		if resp != nil && resp.Body != nil {
 			_ = resp.Body.Close()
 		}
 	}()
-
-	// Get bucket name (alias)
-	bucketName := bucketID
-	if aliases := bucket.GetGlobalAliases(); len(aliases) > 0 {
-		bucketName = aliases[0]
-	}
-
-	// Construct S3 endpoint URL (Garage S3 API typically uses port 3900)
-	// Replace admin port (3903) with S3 port (3900)
-	s3URL := fmt.Sprintf("%s://%s/%s?lifecycle",
-		client.Scheme,
-		replacePort(client.Host, 3900),
-		bucketName)
-
-	// Create lifecycle configuration XML
-	lifecycleConfig := LifecycleConfiguration{
-		Rules: []Rule{
-			{
-				ID:     "expire-after-days",
-				Status: "Enabled",
-				Expiration: &Expiration{
-					Days: expirationDays,
-				},
-			},
-		},
-	}
-
-	xmlData, err := xml.MarshalIndent(lifecycleConfig, "", "  ")
 	if err != nil {
-		return fmt.Errorf("failed to marshal lifecycle config: %w", err)
-	}
-
-	// Create HTTP request
-	req, err := http.NewRequestWithContext(ctx, "PUT", s3URL, bytes.NewReader(xmlData))
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/xml")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", client.Token))
-
-	// Execute request
-	httpClient := &http.Client{}
-	// Use a distinct variable: reassigning `resp` here would clobber the
-	// GetBucketInfo response that the deferred Close above closes over —
-	// nil-dereference panic when this request fails, and a leaked/double-closed
-	// body when it succeeds.
-	s3Resp, err := httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to execute request: %w", err)
-	}
-	defer func() {
-		if s3Resp != nil && s3Resp.Body != nil {
-			_ = s3Resp.Body.Close()
-		}
-	}()
-
-	if s3Resp.StatusCode != http.StatusOK && s3Resp.StatusCode != http.StatusNoContent {
-		return fmt.Errorf("unexpected status code: %d", s3Resp.StatusCode)
+		return fmt.Errorf("failed to update bucket lifecycle: %w", garageAPIError(err))
 	}
 
 	return nil
 }
 
-// getBucketLifecyclePolicy retrieves the lifecycle expiration policy for a bucket
-func getBucketLifecyclePolicy(ctx context.Context, client *GarageClient, bucketID string) (int, error) {
-	// Get bucket info to find the bucket alias/name
-	bucket, resp, err := client.Client.BucketAPI.GetBucketInfo(client.WithAuth(ctx)).Id(bucketID).Execute()
-	if err != nil {
-		return 0, fmt.Errorf("failed to get bucket info: %w", err)
-	}
-	defer func() {
-		if resp != nil && resp.Body != nil {
-			_ = resp.Body.Close()
+// lifecycleExpirationDays returns the expiration in days of the lifecycle
+// rules, or 0 if no rule expires objects.
+func lifecycleExpirationDays(rules []garage.LifecycleRule) int {
+	for _, rule := range rules {
+		expiration, ok := rule.GetExpirationOk()
+		if !ok || expiration == nil {
+			continue
 		}
-	}()
-
-	// Get bucket name (alias)
-	bucketName := bucketID
-	if aliases := bucket.GetGlobalAliases(); len(aliases) > 0 {
-		bucketName = aliases[0]
-	}
-
-	// Construct S3 endpoint URL
-	s3URL := fmt.Sprintf("%s://%s/%s?lifecycle",
-		client.Scheme,
-		replacePort(client.Host, 3900),
-		bucketName)
-
-	// Create HTTP request
-	req, err := http.NewRequestWithContext(ctx, "GET", s3URL, nil)
-	if err != nil {
-		return 0, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	// Use admin token for authorization
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", client.Token))
-
-	// Execute request
-	httpClient := &http.Client{}
-	// Use a distinct variable: reassigning `resp` here would clobber the
-	// GetBucketInfo response that the deferred Close above closes over —
-	// nil-dereference panic when this request fails, and a leaked/double-closed
-	// body when it succeeds.
-	s3Resp, err := httpClient.Do(req)
-	if err != nil {
-		return 0, fmt.Errorf("failed to execute request: %w", err)
-	}
-	defer func() {
-		if s3Resp != nil && s3Resp.Body != nil {
-			_ = s3Resp.Body.Close()
-		}
-	}()
-
-	if s3Resp.StatusCode == http.StatusNotFound {
-		return 0, nil // No lifecycle policy set
-	}
-
-	if s3Resp.StatusCode != http.StatusOK {
-		return 0, fmt.Errorf("unexpected status code: %d", s3Resp.StatusCode)
-	}
-
-	// Parse XML response
-	var lifecycleConfig LifecycleConfiguration
-	if err := xml.NewDecoder(s3Resp.Body).Decode(&lifecycleConfig); err != nil {
-		return 0, fmt.Errorf("failed to decode response: %w", err)
-	}
-
-	// Extract expiration days from first rule
-	if len(lifecycleConfig.Rules) > 0 && lifecycleConfig.Rules[0].Expiration != nil {
-		return lifecycleConfig.Rules[0].Expiration.Days, nil
-	}
-
-	return 0, nil
-}
-
-// deleteBucketLifecyclePolicy removes the lifecycle policy from a bucket
-func deleteBucketLifecyclePolicy(ctx context.Context, client *GarageClient, bucketID string) error {
-	// Get bucket info to find the bucket alias/name
-	bucket, resp, err := client.Client.BucketAPI.GetBucketInfo(client.WithAuth(ctx)).Id(bucketID).Execute()
-	if err != nil {
-		return fmt.Errorf("failed to get bucket info: %w", err)
-	}
-	defer func() {
-		if resp != nil && resp.Body != nil {
-			_ = resp.Body.Close()
-		}
-	}()
-
-	// Get bucket name (alias)
-	bucketName := bucketID
-	if aliases := bucket.GetGlobalAliases(); len(aliases) > 0 {
-		bucketName = aliases[0]
-	}
-
-	// Construct S3 endpoint URL
-	s3URL := fmt.Sprintf("%s://%s/%s?lifecycle",
-		client.Scheme,
-		replacePort(client.Host, 3900),
-		bucketName)
-
-	// Create HTTP request
-	req, err := http.NewRequestWithContext(ctx, "DELETE", s3URL, nil)
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-
-	// Use admin token for authorization
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", client.Token))
-
-	// Execute request
-	httpClient := &http.Client{}
-	// Use a distinct variable: reassigning `resp` here would clobber the
-	// GetBucketInfo response that the deferred Close above closes over —
-	// nil-dereference panic when this request fails, and a leaked/double-closed
-	// body when it succeeds.
-	s3Resp, err := httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to execute request: %w", err)
-	}
-	defer func() {
-		if s3Resp != nil && s3Resp.Body != nil {
-			_ = s3Resp.Body.Close()
-		}
-	}()
-
-	if s3Resp.StatusCode != http.StatusOK && s3Resp.StatusCode != http.StatusNoContent && s3Resp.StatusCode != http.StatusNotFound {
-		return fmt.Errorf("unexpected status code: %d", s3Resp.StatusCode)
-	}
-
-	return nil
-}
-
-// replacePort replaces the port in a host string (e.g., "127.0.0.1:3903" -> "127.0.0.1:3900")
-func replacePort(host string, newPort int) string {
-	// Simple implementation - if host contains a port, replace it
-	// Otherwise, append the new port
-	for i := len(host) - 1; i >= 0; i-- {
-		if host[i] == ':' {
-			return host[:i+1] + strconv.Itoa(newPort)
+		days, ok := expiration.GetDaysOk()
+		if ok && days != nil {
+			return int(*days)
 		}
 	}
-	return host + ":" + strconv.Itoa(newPort)
+	return 0
 }
