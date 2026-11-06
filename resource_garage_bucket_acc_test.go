@@ -426,6 +426,110 @@ func testAccAddGarageBucketLocalAlias(t *testing.T, bucketID, alias string) {
 	}
 }
 
+func TestAccGarageBucket_quotas(t *testing.T) {
+	alias := "accb-" + acctest.RandString(8) + "-quotas"
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV5ProviderFactories: testAccProtoV5ProviderFactories,
+		CheckDestroy:             testAccCheckGarageBucketDestroy(t),
+		Steps: []resource.TestStep{
+			// Create the bucket with both quotas.
+			{
+				Config: testAccGarageBucketQuotasConfig(alias, "max_size = 1048576\n  max_objects = 100"),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("garage_bucket.test", "max_size", "1048576"),
+					resource.TestCheckResourceAttr("garage_bucket.test", "max_objects", "100"),
+					testAccCheckGarageBucketQuotas(t, "garage_bucket.test", 1048576, 100),
+				),
+			},
+			// Change one quota. The other stays.
+			{
+				Config: testAccGarageBucketQuotasConfig(alias, "max_size = 2097152\n  max_objects = 100"),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("garage_bucket.test", "max_size", "2097152"),
+					resource.TestCheckResourceAttr("garage_bucket.test", "max_objects", "100"),
+					testAccCheckGarageBucketQuotas(t, "garage_bucket.test", 2097152, 100),
+				),
+			},
+			// Remove one quota with 0. The other stays.
+			{
+				Config: testAccGarageBucketQuotasConfig(alias, "max_size = 2097152\n  max_objects = 0"),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("garage_bucket.test", "max_size", "2097152"),
+					resource.TestCheckResourceAttr("garage_bucket.test", "max_objects", "0"),
+					testAccCheckGarageBucketQuotas(t, "garage_bucket.test", 2097152, 0),
+				),
+			},
+			// Remove the quota attributes.
+			{
+				Config: testAccGarageBucketQuotasConfig(alias, ""),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("garage_bucket.test", "max_size", "0"),
+					resource.TestCheckResourceAttr("garage_bucket.test", "max_objects", "0"),
+					testAccCheckGarageBucketQuotas(t, "garage_bucket.test", 0, 0),
+				),
+			},
+			// Set a quota on an existing bucket.
+			{
+				Config: testAccGarageBucketQuotasConfig(alias, "max_objects = 5"),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("garage_bucket.test", "max_size", "0"),
+					resource.TestCheckResourceAttr("garage_bucket.test", "max_objects", "5"),
+					testAccCheckGarageBucketQuotas(t, "garage_bucket.test", 0, 5),
+				),
+			},
+		},
+	})
+}
+
+func testAccGarageBucketQuotasConfig(alias, quotas string) string {
+	return testAccProviderConfig() + fmt.Sprintf(`
+resource "garage_bucket" "test" {
+  global_alias = %q
+  %s
+}
+`, alias, quotas)
+}
+
+// testAccCheckGarageBucketQuotas makes sure that Garage has the given quotas
+// for the bucket. A value of 0 means that Garage must report no quota (null).
+func testAccCheckGarageBucketQuotas(t *testing.T, name string, maxSize, maxObjects int64) resource.TestCheckFunc {
+	return func(s *terraform.State) error {
+		rs, ok := s.RootModule().Resources[name]
+		if !ok {
+			return fmt.Errorf("resource %s not found", name)
+		}
+		client := testAccClient(t)
+		bucket, resp, err := client.Client.BucketAPI.GetBucketInfo(client.WithAuth(context.Background())).Id(rs.Primary.ID).Execute()
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+		if err != nil {
+			return fmt.Errorf("failed to read bucket %s: %w", rs.Primary.ID, err)
+		}
+		quotas := bucket.GetQuotas()
+		for _, q := range []struct {
+			name string
+			got  *int64
+			want int64
+		}{
+			{"maxSize", quotas.MaxSize.Get(), maxSize},
+			{"maxObjects", quotas.MaxObjects.Get(), maxObjects},
+		} {
+			switch {
+			case q.want == 0 && q.got != nil:
+				return fmt.Errorf("bucket %s has %s %d, want null", rs.Primary.ID, q.name, *q.got)
+			case q.want != 0 && q.got == nil:
+				return fmt.Errorf("bucket %s has %s null, want %d", rs.Primary.ID, q.name, q.want)
+			case q.want != 0 && *q.got != q.want:
+				return fmt.Errorf("bucket %s has %s %d, want %d", rs.Primary.ID, q.name, *q.got, q.want)
+			}
+		}
+		return nil
+	}
+}
+
 func testAccCheckGarageBucketDestroy(t *testing.T) resource.TestCheckFunc {
 	return func(s *terraform.State) error {
 		client := testAccClient(t)

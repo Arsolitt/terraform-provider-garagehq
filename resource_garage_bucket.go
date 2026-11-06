@@ -14,6 +14,7 @@ import (
 	garage "git.deuxfleurs.fr/garage-sdk/garage-admin-sdk-golang"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
 )
 
 func resourceGarageBucket() *schema.Resource {
@@ -46,6 +47,18 @@ func resourceGarageBucket() *schema.Resource {
 				Type:        schema.TypeInt,
 				Computed:    true,
 				Description: "Number of objects in this bucket",
+			},
+			"max_size": {
+				Type:         schema.TypeInt,
+				Optional:     true,
+				ValidateFunc: validation.IntAtLeast(0),
+				Description:  "Maximum total size in bytes of the objects in this bucket. Unset or 0 means no quota.",
+			},
+			"max_objects": {
+				Type:         schema.TypeInt,
+				Optional:     true,
+				ValidateFunc: validation.IntAtLeast(0),
+				Description:  "Maximum number of objects in this bucket. Unset or 0 means no quota.",
 			},
 			"expiration_days": {
 				Type:        schema.TypeInt,
@@ -112,6 +125,13 @@ func resourceGarageBucketCreate(ctx context.Context, d *schema.ResourceData, m i
 		return diag.FromErr(err)
 	}
 
+	// Set quotas if specified
+	if d.Get("max_size").(int) > 0 || d.Get("max_objects").(int) > 0 {
+		if err := setBucketQuotas(ctx, client, bucket.GetId(), d.Get("max_size").(int), d.Get("max_objects").(int)); err != nil {
+			return diag.FromErr(fmt.Errorf("failed to set quotas: %w", err))
+		}
+	}
+
 	// Set expiration policy if specified
 	if expirationDays, ok := d.GetOk("expiration_days"); ok && expirationDays.(int) > 0 {
 		if err := setBucketLifecyclePolicy(ctx, client, bucket.GetId(), expirationDays.(int)); err != nil {
@@ -160,6 +180,14 @@ func resourceGarageBucketRead(ctx context.Context, d *schema.ResourceData, m int
 		return diag.FromErr(err)
 	}
 	if err := d.Set("global_alias", selectGlobalAlias(bucket.GetGlobalAliases(), d.Get("global_alias").(string))); err != nil {
+		return diag.FromErr(err)
+	}
+
+	quotas := bucket.GetQuotas()
+	if err := d.Set("max_size", quotas.GetMaxSize()); err != nil {
+		return diag.FromErr(err)
+	}
+	if err := d.Set("max_objects", quotas.GetMaxObjects()); err != nil {
 		return diag.FromErr(err)
 	}
 
@@ -270,6 +298,16 @@ func resourceGarageBucketUpdate(ctx context.Context, d *schema.ResourceData, m i
 			// configured alias although Garage did not apply it.
 			d.Partial(true)
 			return diag.FromErr(fmt.Errorf("failed to update global alias: %w", err))
+		}
+	}
+
+	// Handle quota changes
+	if d.HasChanges("max_size", "max_objects") {
+		if err := setBucketQuotas(ctx, client, bucketID, d.Get("max_size").(int), d.Get("max_objects").(int)); err != nil {
+			// Keep the prior state: without this, the SDK records the
+			// configured quotas although Garage did not apply them.
+			d.Partial(true)
+			return diag.FromErr(fmt.Errorf("failed to update quotas: %w", err))
 		}
 	}
 
@@ -463,6 +501,43 @@ func setBucketWebsiteAccess(ctx context.Context, client *GarageClient, bucketID 
 			_ = resp.Body.Close()
 		}
 	}()
+
+	return nil
+}
+
+// buildBucketQuotas converts max_size and max_objects into an ApiBucketQuotas
+// payload. Garage reads a null quota as no quota, so 0 is sent as null.
+func buildBucketQuotas(maxSize, maxObjects int) garage.ApiBucketQuotas {
+	quotas := garage.NewApiBucketQuotas()
+	if maxSize > 0 {
+		quotas.SetMaxSize(int64(maxSize))
+	} else {
+		quotas.SetMaxSizeNil()
+	}
+	if maxObjects > 0 {
+		quotas.SetMaxObjects(int64(maxObjects))
+	} else {
+		quotas.SetMaxObjectsNil()
+	}
+	return *quotas
+}
+
+// setBucketQuotas applies the quotas of a bucket via the admin API
+// UpdateBucket endpoint. It always sends both quotas, so that a removed quota
+// is cleared.
+func setBucketQuotas(ctx context.Context, client *GarageClient, bucketID string, maxSize, maxObjects int) error {
+	updateReq := garage.NewUpdateBucketRequestBody()
+	updateReq.SetQuotas(buildBucketQuotas(maxSize, maxObjects))
+
+	_, resp, err := client.Client.BucketAPI.UpdateBucket(client.WithAuth(ctx)).Id(bucketID).UpdateBucketRequestBody(*updateReq).Execute()
+	defer func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	}()
+	if err != nil {
+		return garageAPIError(err)
+	}
 
 	return nil
 }

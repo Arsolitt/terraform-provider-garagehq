@@ -16,7 +16,7 @@ A Terraform provider for [Garage](https://garagehq.deuxfleurs.fr/) object storag
 | Resource | Description |
 |----------|-------------|
 | `garage_key` | Manage S3 access keys |
-| `garage_bucket` | Create buckets with lifecycle policies |
+| `garage_bucket` | Create buckets with lifecycle policies and quotas |
 | `garage_bucket_key` | Manage bucket permissions |
 | `garage_admin_token` | Scoped admin API tokens |
 | `garage_cluster_layout` | Cluster topology management |
