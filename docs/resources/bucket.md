@@ -134,7 +134,7 @@ Optional:
 - `bytes` (Number) - Total bytes used by objects in this bucket
 - `objects` (Number) - Number of objects in this bucket
 
-~> **Note** Lifecycle policies use the S3-compatible API and require proper configuration of the S3 endpoint (typically port 3900).
+~> **Note** Lifecycle policies are configured through the Garage admin API (`UpdateBucket` and `GetBucketInfo`); the S3 endpoint is not required.
 
 ## Lifecycle Configuration
 

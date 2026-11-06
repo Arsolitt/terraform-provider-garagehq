@@ -364,7 +364,7 @@ The provider records `secret_access_key` at create and import time, not on later
 
 ### Lifecycle Policy Not Working
 
-Ensure the S3 API is accessible (default port 3900). The provider uses the S3 API for lifecycle configuration, not the admin API.
+Ensure the admin token can call `GetBucketInfo` and `UpdateBucket`. The provider configures lifecycle rules through the admin API.
 
 ## License
 
