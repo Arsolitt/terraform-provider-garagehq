@@ -33,6 +33,11 @@ func TestAccGarageKey_basic(t *testing.T) {
 			},
 			{
 				Config: testAccGarageKeyConfig(name + "-renamed"),
+				ConfigPlanChecks: resource.ConfigPlanChecks{
+					PreApply: []plancheck.PlanCheck{
+						plancheck.ExpectResourceAction("garage_key.test", plancheck.ResourceActionUpdate),
+					},
+				},
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttr("garage_key.test", "name", name+"-renamed"),
 				),
@@ -141,10 +146,11 @@ func TestAccGarageKey_changeAccessKeyID(t *testing.T) {
 					testAccCheckGarageKeyAbsent(t, secondID),
 				),
 			},
-			// The tombstone of the first key is not visible at plan time.
+			// The tombstone of the first key is not visible at plan time. The
+			// error carries Garage's KeyAlreadyExists reason.
 			{
 				Config:      testAccGarageKeyImportConfig(name, firstID, secretAccessKey),
-				ExpectError: regexp.MustCompile(`failed to import key`),
+				ExpectError: regexp.MustCompile(`(?s)failed to import key:.*KeyAlreadyExists`),
 			},
 		},
 	})
@@ -234,6 +240,16 @@ resource "garage_key" "test" {
 `, validID),
 				PlanOnly:    true,
 				ExpectError: regexp.MustCompile(`"access_key_id": all of\s+` + "`access_key_id,secret_access_key`"),
+			},
+			{
+				Config: testAccProviderConfig() + fmt.Sprintf(`
+resource "garage_key" "test" {
+  name              = "acc-key-invalid"
+  secret_access_key = %q
+}
+`, validSecret),
+				PlanOnly:    true,
+				ExpectError: regexp.MustCompile(`all of\s+` + "`access_key_id,secret_access_key`"),
 			},
 		},
 	})

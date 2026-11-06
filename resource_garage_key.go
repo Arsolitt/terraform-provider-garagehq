@@ -59,7 +59,7 @@ func resourceGarageKey() *schema.Resource {
 					validation.StringMatch(secretAccessKeyLengthRegex, "must be at least 16 characters"),
 					validation.StringMatch(secretAccessKeyCharsRegex, "must contain only graphic ASCII characters (U+0021 to U+007E)"),
 				)),
-				Description: "The secret access key. Set it together with `access_key_id` to import a key with known credentials; otherwise Garage generates it (only available on create)",
+				Description: "The secret access key. Set it together with `access_key_id` to import a key with known credentials; otherwise Garage generates it (the provider records it only at create)",
 			},
 		},
 	}
@@ -84,11 +84,12 @@ func resourceGarageKeyCreate(ctx context.Context, d *schema.ResourceData, m inte
 	var key *garage.GetKeyInfoResponse
 	var resp *http.Response
 	var err error
-	// Use the configuration, not the values: a value that was unknown at plan
-	// time passes validation and can be empty here. Such a key must not get
-	// generated credentials.
+	// Use the configuration, not the values, so that an empty resolved pair
+	// cannot silently fall back to generated credentials.
 	config := d.GetRawConfig()
-	if !config.GetAttr("access_key_id").IsNull() || !config.GetAttr("secret_access_key").IsNull() {
+	configured := !config.IsNull() &&
+		(!config.GetAttr("access_key_id").IsNull() || !config.GetAttr("secret_access_key").IsNull())
+	if configured {
 		if accessKeyID == "" || secretAccessKey == "" {
 			return diag.Errorf("access_key_id and secret_access_key must both be set")
 		}
@@ -97,7 +98,7 @@ func resourceGarageKeyCreate(ctx context.Context, d *schema.ResourceData, m inte
 
 		key, resp, err = client.Client.AccessKeyAPI.ImportKey(client.WithAuth(ctx)).ImportKeyRequest(*importReq).Execute()
 		if err != nil {
-			return diag.FromErr(fmt.Errorf("failed to import key: %w", err))
+			return diag.FromErr(fmt.Errorf("failed to import key: %w", garageAPIError(err)))
 		}
 	} else {
 		keyReq := garage.NewUpdateKeyRequestBody()

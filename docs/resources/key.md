@@ -62,6 +62,8 @@ Garage accepts an `access_key_id` of 8 or more characters from ASCII letters, di
 
 ~> **Warning** Do not use `terraform apply -replace` or `terraform taint` on a key with a configured `access_key_id`. The provider cannot reject such a replacement at plan time. Terraform deletes the key, and then Garage refuses to import the same `access_key_id`. To replace the key, set a new `access_key_id`.
 
+~> **Warning** `terraform plan -destroy` and `terraform destroy` fail during the pre-destroy refresh plan with `cannot change secret_access_key ...` when the configuration sets a `secret_access_key` that differs from the value in state. Set `secret_access_key` back to the state value, or remove `secret_access_key` and `access_key_id` from the configuration, and run the destroy again; alternatively use `terraform destroy -refresh=false`.
+
 ## Import
 
 Access keys can be imported using the access key ID:
@@ -79,6 +81,6 @@ terraform import garage_key.my_key GK1234567890ABCDEF
 ### Optional
 
 - `access_key_id` (String) - The access key ID (used to identify the key). Requires `secret_access_key`. If you do not set it, Garage generates it. A change forces a new resource, see [Key with Known Credentials](#key-with-known-credentials).
-- `secret_access_key` (String, Sensitive) - The secret access key. Requires `access_key_id`. If you do not set it, Garage generates it. A change forces a new resource when `access_key_id` also changes. The provider rejects a change to only this value at plan time, see [Key with Known Credentials](#key-with-known-credentials).
+- `secret_access_key` (String, Sensitive) - The secret access key. Requires `access_key_id`. If you do not set it, Garage generates it. A change forces a new resource when `access_key_id` also changes. The provider rejects a change to only this value at plan time, see [Key with Known Credentials](#key-with-known-credentials). The provider records this value only at create time, not on later reads; Garage keeps it, see the note below.
 
--> **Important** A generated `secret_access_key` is only available immediately after creation. Store it securely in your secrets manager or Terraform state will be the only record of it.
+-> **Important** The provider records `secret_access_key` only at create time and does not update it on later reads. Garage itself keeps the secret and can show it, for example with `garage key info --show-secret <access_key_id>` or the admin API `GetKeyInfo` with `showSecretKey=true`. Do not destroy and recreate a key only to recover its secret: Garage refuses to import a configured `access_key_id` again after deletion. Store the secret securely in your secrets manager when the key is created.
