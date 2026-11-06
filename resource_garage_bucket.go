@@ -291,7 +291,7 @@ func addBucketGlobalAlias(ctx context.Context, client *GarageClient, bucketID, a
 
 	_, resp, err := client.Client.BucketAliasAPI.AddBucketAlias(client.WithAuth(ctx)).BucketAliasEnum(aliasEnum).Execute()
 	if err != nil {
-		return err
+		return garageAPIError(err)
 	}
 	defer func() {
 		if resp != nil && resp.Body != nil {
@@ -302,8 +302,10 @@ func addBucketGlobalAlias(ctx context.Context, client *GarageClient, bucketID, a
 	return nil
 }
 
-// removeBucketGlobalAlias removes a global alias from a bucket. It also
-// returns the HTTP status code, or 0 if there is no response.
+// removeBucketGlobalAlias removes a global alias from a bucket. Removing an
+// alias that the bucket does not have succeeds, so a retry after a partially
+// applied change reaches the target state. It also returns the HTTP status
+// code of the removal request, or 0 if there is no response.
 func removeBucketGlobalAlias(ctx context.Context, client *GarageClient, bucketID, alias string) (int, error) {
 	aliasEnum := garage.BucketAliasEnumOneOfAsBucketAliasEnum(garage.NewBucketAliasEnumOneOf(bucketID, alias))
 
@@ -313,11 +315,36 @@ func removeBucketGlobalAlias(ctx context.Context, client *GarageClient, bucketID
 			_ = resp.Body.Close()
 		}
 	}()
-	if resp == nil {
-		return 0, err
+	status := 0
+	if resp != nil {
+		status = resp.StatusCode
+	}
+	if err == nil {
+		return status, nil
+	}
+	err = garageAPIError(err)
+
+	// Garage fails to remove an alias that is missing or belongs to another
+	// bucket, so the alias list decides whether the error matters.
+	aliases, probeErr := bucketGlobalAliases(ctx, client, bucketID)
+	if probeErr == nil && !slices.Contains(aliases, alias) {
+		return status, nil
 	}
 
-	return resp.StatusCode, err
+	return status, err
+}
+
+// bucketGlobalAliases returns the global aliases of a bucket.
+func bucketGlobalAliases(ctx context.Context, client *GarageClient, bucketID string) ([]string, error) {
+	bucket, resp, err := client.Client.BucketAPI.GetBucketInfo(client.WithAuth(ctx)).Id(bucketID).Execute()
+	if resp != nil && resp.Body != nil {
+		_ = resp.Body.Close()
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	return bucket.GetGlobalAliases(), nil
 }
 
 // buildWebsiteAccess converts the website_access schema block into an

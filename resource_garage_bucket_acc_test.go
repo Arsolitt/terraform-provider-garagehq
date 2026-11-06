@@ -118,9 +118,13 @@ func TestAccGarageBucket_globalAlias(t *testing.T) {
 				Config:      testAccGarageBucketAliasConfig(""),
 				ExpectError: regexp.MustCompile("Garage does not remove the last alias of a bucket"),
 			},
-			// With a local alias, the global alias can be removed.
+			// The failed apply must have left the global alias in place. With a
+			// local alias, the global alias can then be removed.
 			{
 				PreConfig: func() {
+					if err := testAccCheckGarageBucketGlobalAliases(t, &bucketID, extra)(nil); err != nil {
+						t.Fatal(err)
+					}
 					testAccAddGarageBucketLocalAlias(t, bucketID, prefix+"-local")
 				},
 				Config: testAccGarageBucketAliasConfig(""),

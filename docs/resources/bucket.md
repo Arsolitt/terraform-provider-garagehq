@@ -115,4 +115,4 @@ When `expiration_days` is set, the provider automatically configures an S3 lifec
 
 When `global_alias` changes, the provider adds the new alias to the bucket and then removes the old alias. The bucket ID and the objects do not change.
 
-Garage does not remove the last alias of a bucket. If you remove `global_alias` and the bucket has no other alias, the apply fails and the bucket keeps its global alias. To remove the global alias, first give the bucket another global alias or a local alias (an alias in the namespace of an access key), or delete the bucket.
+Garage does not remove the last alias of a bucket. If you remove `global_alias` and the bucket has no other alias, the apply fails and the bucket keeps its global alias. To remove the global alias, first give the bucket another global alias, or a local alias in the namespace of an access key via `garage bucket alias <bucket> <name> --local <access-key-id>` (Garage CLI) or the `AddBucketAlias` admin API call, or delete the bucket.
